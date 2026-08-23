@@ -1,7 +1,10 @@
 # vir-gtk Patch Notes
 
-## 1.0.0
-* Initial extraction.
-* Added `portal` module for `org.freedesktop.portal.Settings` resolution and `color-scheme` settings composition.
-* Added `theme` module for Kanagawa Dragon and Lotus color palettes, CSS generation, and `%TOKEN%` string replacement.
-* Replaces the duplicated theme pipelines in `Atrium`, `Conservatory`, `Viaduct`, and `Colophon`.
+## v1.0.0 (2026-08-22)
+
+**Initial Extraction and Release**
+`vir-gtk` has been extracted from Atrium, Conservatory, Viaduct, and Colophon into a standalone shared library. This centralizes the VirInvictus design idiom into a single repository and permanently removes the need for individual applications to duplicate D-Bus portal listening code or hardcode hex values.
+
+*   **Portal Module**: Introduced the `portal` module to handle `org.freedesktop.portal.Settings` resolution. The module automatically syncs with the desktop environment's `color-scheme` broadcast, dropping dead weak references safely to prevent memory leaks in GTK's main loop.
+*   **Theme Module**: Added the `theme` module containing the authoritative Kanagawa Dragon and Lotus color palettes. It supports CSS generation and string token replacement to securely inject themes into GTK4 `CssProvider` instances.
+*   **Priority CSS**: The library strictly enforces CSS injection at `STYLE_PROVIDER_PRIORITY_USER + 1`, ensuring that `vir-gtk` styling always overrides standard desktop stylesheets while preserving the application's ability to selectively override properties.
