@@ -1,3 +1,7 @@
+## v1.0.2 (2026-08-25)
+
+- **Tests:** Added the crate's first unit tests (8): `Palette::dragon()` pinned to the Kanagawa Dragon reference hexes, Dragon/Lotus distinctness, full `%TOKEN%` substitution coverage (including the documented `%BG%`/`%HEADING%` gap from roadmap Phase 3), CSS custom-property generation, and the portal `color-scheme` value mapping plus theme-nick resolution helpers.
+
 ## v1.0.1 (2026-08-23)
 
 - **Build:** build: add GitHub Actions CI workflow

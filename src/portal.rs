@@ -168,3 +168,38 @@ fn read_portal_scheme(conn: &gio::DBusConnection) -> Option<u32> {
             .get::<u32>(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{portal_scheme_is_dark, resolve_is_dark};
+
+    #[test]
+    fn portal_scheme_uses_freedesktop_color_scheme_values() {
+        // org.freedesktop.appearance color-scheme: 0 = no preference,
+        // 1 = dark, 2 = light. Anything else counts as light.
+        assert!(portal_scheme_is_dark(1));
+        assert!(!portal_scheme_is_dark(0));
+        assert!(!portal_scheme_is_dark(2));
+        assert!(!portal_scheme_is_dark(42));
+    }
+
+    #[test]
+    fn explicit_nicks_override_the_system_preference() {
+        for nick in ["force-dark", "dark"] {
+            assert!(resolve_is_dark(nick, false), "{nick} must force dark");
+            assert!(resolve_is_dark(nick, true), "{nick} must force dark");
+        }
+        for nick in ["force-light", "light"] {
+            assert!(!resolve_is_dark(nick, true), "{nick} must force light");
+            assert!(!resolve_is_dark(nick, false), "{nick} must force light");
+        }
+    }
+
+    #[test]
+    fn unknown_nicks_follow_the_system_preference() {
+        for nick in ["system", "default", "", "Dark"] {
+            assert!(resolve_is_dark(nick, true), "{nick:?} must follow system");
+            assert!(!resolve_is_dark(nick, false), "{nick:?} must follow system");
+        }
+    }
+}
