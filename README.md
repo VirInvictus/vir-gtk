@@ -58,3 +58,13 @@ fn main() {
 ## Design Philosophy
 
 The VirInvictus suite uses flat, calm interfaces built on the Kanagawa color palette. `vir-gtk` strips away the rounded corners, gradients, and heavy shadows of Adwaita in favor of sharp, distinct boundaries and muted contrast. The library assumes that the application will style standard `gtk::Box`, `gtk::HeaderBar`, and `gtk::Button` widgets manually using the injected custom properties.
+
+## Support
+
+If vir-gtk's useful to you and you'd like to chip in:
+
+- liberapay · [liberapay.com/bdkl](https://liberapay.com/bdkl/)
+- bitcoin
+  ```
+  bc1qkge6zr45tzqfwfmvma2ylumt6mg7wlwmhr05yv
+  ```
