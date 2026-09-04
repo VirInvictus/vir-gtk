@@ -12,9 +12,9 @@ jobs:
   check:
     name: fmt + clippy + test
     runs-on: ubuntu-latest
-    # Atrium requires gtk4 >= 4.16; Ubuntu runners ship 4.14, so the build
-    # aborts in gdk4-sys. Fedora carries a new-enough GTK and matches the
-    # project's actual target environment.
+    # vir-gtk links gtk4-sys, which needs the system GTK libraries present;
+    # Fedora carries a new-enough GTK and matches the suite's actual runtime
+    # (the consumer apps target GTK 4.16+).
     container: fedora:latest
     steps:
       - name: Install system dependencies
@@ -44,7 +44,6 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
 
       - name: cargo test
-        # The GTK binary crate's tests call gtk::init(), which needs a display.
-        env:
-          GDK_BACKEND: x11
-        run: xvfb-run -a cargo test --workspace
+        # The tests are pure-function (no gtk::init), but the gtk4 sys crates
+        # must link against the system libraries installed above.
+        run: cargo test --workspace

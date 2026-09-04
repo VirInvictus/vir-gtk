@@ -3,6 +3,8 @@
 
 use gtk4 as gtk;
 
+use std::cell::RefCell;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
     pub bg: &'static str,
@@ -72,10 +74,12 @@ impl Palette {
             .replace("%BG_VIEW%", self.bg_view)
             .replace("%BG_HEADER%", self.bg_header)
             .replace("%BG_CARD%", self.bg_card)
+            .replace("%BG_RAISED%", self.bg_raised)
+            .replace("%BG%", self.bg)
             .replace("%FG_DIM%", self.fg_dim)
             .replace("%FG%", self.fg)
+            .replace("%HEADING%", self.heading)
             .replace("%GRID%", self.grid)
-            .replace("%BG_RAISED%", self.bg_raised)
             .replace("%ACCENT%", self.accent)
             .replace("%ON_ACCENT%", self.on_accent)
             .replace("%WARN%", self.warn)
@@ -109,16 +113,33 @@ impl Palette {
     }
 }
 
-/// Helper to add a string as a CSS provider at `USER + 1`.
+thread_local! {
+    /// The provider this crate last installed per display, so a re-install on
+    /// a theme switch replaces it instead of accumulating providers on the
+    /// display. GTK objects are `!Send`; styling runs on the main thread.
+    static INSTALLED: RefCell<Vec<(gtk::gdk::Display, gtk::CssProvider)>> =
+        const { RefCell::new(Vec::new()) };
+}
+
+/// Replace the stylesheet this crate previously installed on the default
+/// display (if any) with `css`, at `USER + 1`. Returns the new provider.
 pub fn install_stylesheet(css: &str) -> Option<gtk::CssProvider> {
     let display = gtk::gdk::Display::default()?;
     let provider = gtk::CssProvider::new();
     provider.load_from_string(css);
-    gtk::style_context_add_provider_for_display(
-        &display,
-        &provider,
-        gtk::STYLE_PROVIDER_PRIORITY_USER + 1,
-    );
+    INSTALLED.with(|installed| {
+        let mut installed = installed.borrow_mut();
+        if let Some(pos) = installed.iter().position(|(d, _)| d == &display) {
+            let (_, old) = installed.remove(pos);
+            gtk::style_context_remove_provider_for_display(&display, &old);
+        }
+        gtk::style_context_add_provider_for_display(
+            &display,
+            &provider,
+            gtk::STYLE_PROVIDER_PRIORITY_USER + 1,
+        );
+        installed.push((display, provider.clone()));
+    });
     Some(provider)
 }
 
@@ -154,21 +175,20 @@ mod tests {
     #[test]
     fn replace_tokens_substitutes_every_documented_token() {
         let out = Palette::dragon().replace_tokens(
-            "%BG_WINDOW%|%BG_VIEW%|%BG_HEADER%|%BG_CARD%|%FG_DIM%|%FG%|%GRID%|%BG_RAISED%|%ACCENT%|%ON_ACCENT%|%WARN%|%ERR%|%OK%",
+            "%BG%|%BG_WINDOW%|%BG_VIEW%|%BG_HEADER%|%BG_CARD%|%FG_DIM%|%FG%|%HEADING%|%GRID%|%BG_RAISED%|%ACCENT%|%ON_ACCENT%|%WARN%|%ERR%|%OK%",
         );
         assert_eq!(
             out,
-            "#181616|#12120f|#1d1c19|#1d1c19|#a6a69c|#c5c9c5|#393836|#282727|#c4746e|#12120f|#c4b28a|#c4746e|#87a987"
+            "#12120f|#181616|#12120f|#1d1c19|#1d1c19|#a6a69c|#c5c9c5|#c8c093|#393836|#282727|#c4746e|#12120f|#c4b28a|#c4746e|#87a987"
         );
     }
 
     #[test]
-    fn replace_tokens_leaves_unknown_tokens_alone() {
-        // %BG% and %HEADING% have palette fields but no token mapping yet;
-        // roadmap Phase 3 tracks adding them. This pins current behavior so
-        // that fix deliberately updates the contract.
+    fn replace_tokens_covers_bg_and_heading() {
+        // %BG% and %HEADING% had palette fields but no token mapping until
+        // 1.0.3; the test that pinned their absence flipped with the fix.
         let out = Palette::dragon().replace_tokens("%BG% %HEADING% %FG%");
-        assert_eq!(out, "%BG% %HEADING% #c5c9c5");
+        assert_eq!(out, "#12120f #c8c093 #c5c9c5");
     }
 
     #[test]
