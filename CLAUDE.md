@@ -1,7 +1,8 @@
 # vir-gtk
 
-**Stack:** Rust, GTK4 (`gtk4` crate), `gio`.
+**Stack:** Rust (edition 2021), GTK4 (`gtk4` crate), `gio`.
 **Status:** Maintained. Standalone library.
+**Versioning deviation:** there is no `VERSION` file; `Cargo.toml` is the single version source (a `VERSION` file would be a second carrier Cargo cannot consume). Every bump still gets a patchnotes entry and an annotated tag at the release commit.
 
 ## What is this?
 A shared styling library for the VirInvictus desktop suite. Extracted from Atrium, Conservatory, Viaduct, and Colophon to eliminate duplication of the `org.freedesktop.portal.Settings` dark-mode logic and the Kanagawa Dragon/Lotus palette generation code.
