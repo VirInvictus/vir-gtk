@@ -5,4 +5,3 @@ edition = "2021"
 
 [dependencies]
 gtk4 = { version = "0.9", features = ["v4_14"] }
-tracing = "0.1"

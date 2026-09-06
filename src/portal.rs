@@ -151,8 +151,15 @@ pub fn init(settings: Option<gio::Settings>, settings_key: Option<&str>, default
     }
 
     gio::bus_get(gio::BusType::Session, gio::Cancellable::NONE, |res| {
-        let Ok(conn) = res else {
-            return;
+        let conn = match res {
+            Ok(conn) => conn,
+            Err(error) => {
+                // Headless sessions and broken portal daemons land here: the
+                // application default stands either way, but silent
+                // degradation hides real breakage.
+                glib::g_warning!("vir-gtk", "portal settings unavailable: {error}");
+                return;
+            }
         };
         conn.signal_subscribe(
             Some("org.freedesktop.portal.Desktop"),

@@ -24,9 +24,7 @@ jobs:
             git \
             pkgconf-pkg-config \
             glib2-devel \
-            gtk4-devel \
-            sqlite-devel \
-            xorg-x11-server-Xvfb
+            gtk4-devel
 
       - uses: actions/checkout@v5
 
