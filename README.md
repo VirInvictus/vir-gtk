@@ -6,7 +6,7 @@ A standalone Rust library that provides the shared GTK4 styling and D-Bus portal
 
 ## Architecture and Capabilities
 
-`vir-gtk` is divided into two primary modules:
+`vir-gtk` is divided into three primary modules:
 
 ### The Portal Module (`vir_gtk::portal`)
 
@@ -19,6 +19,12 @@ It handles the complexity of composing the desktop's system color scheme against
 The theme module provides the definitive Kanagawa Dragon (dark) and Kanagawa Lotus (light) hex palettes used across the suite.
 
 It exposes methods to inject these palettes into GTK4 applications. It supports generating standard GTK 4.16+ custom property blocks (e.g., `--c-bg-window`) or performing direct string token replacement (e.g., swapping `%BG_WINDOW%` for the hex code) on legacy CSS stylesheets.
+
+It also ships `base_css()`, the shared flat, square base widget sheet (window chrome, headerbar, lists, buttons, entries, popovers, the Adwaita utility classes, and a scoped focus ring) spliced with a palette, plus a two-tier install ladder: `install_stylesheet` carries the crate's sheets at `USER + 1` and `install_app_stylesheet` carries the application's own sheet at `USER + 2`, so app-specific overrides win by priority rather than by install order.
+
+### The Color Module (`vir_gtk::color`)
+
+For widgets that draw themselves (charts, waveforms, spectrums): `to_gdk_rgba` and `to_cairo_rgba` turn the palette's hex strings into GDK and cairo values (strict CSS hex parsing; malformed input is `None`, not a panic), and `redraw_on_theme_change` re-queues a widget's draw when the portal flips dark/light. Cairo needs no dependency here: the cairo values are plain floats you pass to your own cairo context.
 
 ## Installation
 

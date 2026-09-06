@@ -1,5 +1,43 @@
 # vir-gtk Patch Notes
 
+## v1.1.0 (2026-09-06)
+
+**Phase 2 opens: the shared base stylesheet, the override ladder, and the
+chart color helpers.**
+
+*   **`theme::base_css(palette)` ships the shared base widget sheet.** The
+    unanimous flat/square core distilled from Atrium's, Conservatory's,
+    and Viaduct's copied sheets: window chrome, headerbar, lists and rows,
+    the button family, entries, popovers, tooltips, scrollbars, the
+    Adwaita utility classes, and the scoped focus ring, with the palette's
+    hexes spliced so no `%TOKEN%` survives. Per the approved design brief
+    it carries none of the deliberate divergences: no radius/checked
+    parameters, no `font-family`, no `@define-color` block, no
+    row-selection rule, no toast. Atrium's rounding, Conservatory's lifted
+    selection and lit checked buttons, and Viaduct's transparent lists
+    stay app-side, where they belong.
+*   **`install_app_stylesheet(css)` completes the override ladder.** The
+    system `gtk.css` sits below `USER`, the crate's sheets at `USER + 1`,
+    and the application's sheet at `USER + 2`, each tier tracked per
+    display and replaced on re-install. App rules now beat the shared base
+    by priority instead of by install timing, which was the one
+    load-bearing ordering Atrium depended on.
+*   **`vir_gtk::color` for the consumers' custom-drawn charts.**
+    `to_gdk_rgba` and `to_cairo_rgba` parse strict CSS hex (malformed
+    input is `None`, not a panic) into a `gdk::RGBA` and the 0.0-1.0
+    triple cairo's source functions take, and `redraw_on_theme_change`
+    re-queues a widget's draw on portal dark/light flips through a weak
+    reference. The cairo dependency the 2026-09-04 gate worried about
+    never materializes: the cairo values are plain `f64` triples, and
+    `cairo-rs` is already transitive in every consumer via `gdk4`.
+*   **Docs:** spec.md gains the base-sheet, priority-ladder, and
+    color-helper contracts; README describes the third module; CLAUDE.md
+    records the ladder rule; the roadmap's base_css box records how each
+    of the four design-brief calls resolved.
+
+Suite: 20 green (8 theme + 6 color + 6 portal), clippy `-D warnings`
+clean, `cargo fmt --check` clean.
+
 ## v1.0.4 (2026-09-06)
 
 **The broadcast panic repair, plus the recon's small findings.**
