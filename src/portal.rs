@@ -16,9 +16,10 @@ use gtk4::gio;
 use gtk4::glib;
 use gtk4::prelude::*;
 use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-type Listener = (glib::WeakRef<glib::Object>, Box<dyn Fn(bool)>);
+type Listener = (glib::WeakRef<glib::Object>, Rc<dyn Fn(bool)>);
 
 static INITIALIZED: AtomicBool = AtomicBool::new(false);
 static SYSTEM_DARK: AtomicBool = AtomicBool::new(true);
@@ -104,14 +105,17 @@ where
     F: Fn(bool) + 'static,
 {
     let weak = owner.upcast_ref::<glib::Object>().downgrade();
-    LISTENERS.with(|l| l.borrow_mut().push((weak, Box::new(f))));
+    LISTENERS.with(|l| l.borrow_mut().push((weak, Rc::new(f))));
 }
 
-/// Fire the live listeners. Iterates by index over a length sampled up front
-/// (no `mem::take`), so a callback that mutates state and re-enters
-/// [`broadcast`] still reaches every listener, and a callback that registers a
-/// new listener neither panics the `RefCell` nor gets skipped by the pass that
-/// is already running.
+/// Fire the live listeners. Each callback is cloned out of the `LISTENERS`
+/// borrow and fired outside it: a listener that re-enters the portal
+/// mid-broadcast (a `resolve_now()` after a state change, or a
+/// [`connect_dark_changed`] from inside a callback) needs mutable access to
+/// `LISTENERS`, and holding the borrow across the call panicked the `RefCell`
+/// (the 1.0.3 bug). The pass itself iterates by index over a length sampled up
+/// front, so a nested broadcast still runs to completion, and a listener
+/// registered mid-pass joins the next broadcast rather than this one.
 fn broadcast(dark: bool) {
     let len = LISTENERS.with(|l| {
         let mut l = l.borrow_mut();
@@ -119,14 +123,16 @@ fn broadcast(dark: bool) {
         l.len()
     });
     for i in 0..len {
-        LISTENERS.with(|l| {
-            let l = l.borrow();
-            if let Some((owner, f)) = l.get(i) {
-                if owner.upgrade().is_some() {
-                    f(dark);
-                }
-            }
+        let listener = LISTENERS.with(|l| {
+            l.borrow()
+                .get(i)
+                .map(|(owner, f)| (owner.clone(), Rc::clone(f)))
         });
+        if let Some((owner, f)) = listener {
+            if owner.upgrade().is_some() {
+                f(dark);
+            }
+        }
     }
 }
 
@@ -252,7 +258,105 @@ fn read_portal_scheme_async(conn: &gio::DBusConnection) {
 
 #[cfg(test)]
 mod tests {
-    use super::{portal_scheme_preference, resolve_is_dark};
+    use std::cell::{Cell, RefCell};
+    use std::rc::Rc;
+
+    use gtk4::glib::object::{Cast, ObjectExt};
+    use gtk4::{gio, glib};
+
+    use super::{portal_scheme_preference, resolve_is_dark, LISTENERS};
+
+    /// Register a live listener against a `Cancellable` owner (a plain
+    /// GObject, no display needed) and leak the owner so the weak ref stays
+    /// upgradeable for the length of the test. libtest may run tests on a
+    /// shared thread, so each test starts from an empty registry.
+    fn register_listener(f: impl Fn(bool) + 'static) {
+        let owner = gio::Cancellable::new();
+        let weak = owner.upcast_ref::<glib::Object>().downgrade();
+        LISTENERS.with(|l| l.borrow_mut().push((weak, Rc::new(f))));
+        std::mem::forget(owner);
+    }
+
+    fn clear_listeners() {
+        LISTENERS.with(|l| *l.borrow_mut() = Vec::new());
+    }
+
+    #[test]
+    fn broadcast_survives_a_re_entrant_listener() {
+        // The 1.0.3 loop held the `LISTENERS` borrow across each callback,
+        // so a listener whose nested `broadcast()` needed the borrow panicked
+        // with `BorrowMutError` even though the index iteration was supposed
+        // to make re-entrancy safe.
+        clear_listeners();
+        let fired = Rc::new(RefCell::new(Vec::new()));
+        let reentered = Rc::new(Cell::new(false));
+
+        let first_fired = fired.clone();
+        let first_reentered = reentered.clone();
+        register_listener(move |dark| {
+            first_fired.borrow_mut().push(("first", dark));
+            if !first_reentered.replace(true) {
+                super::broadcast(!dark);
+            }
+        });
+        let second_fired = fired.clone();
+        register_listener(move |dark| second_fired.borrow_mut().push(("second", dark)));
+
+        super::broadcast(true);
+
+        // The nested pass ran to completion inside the first callback and
+        // the outer pass resumed where it left off.
+        assert_eq!(
+            *fired.borrow(),
+            vec![
+                ("first", true),
+                ("first", false),
+                ("second", false),
+                ("second", true)
+            ]
+        );
+    }
+
+    #[test]
+    fn broadcast_survives_a_mid_pass_registration() {
+        // The same 1.0.3 borrow bug from the registration side: a callback
+        // that called `connect_dark_changed()` mid-broadcast panicked the
+        // `RefCell` instead of joining the next pass.
+        clear_listeners();
+        let fired = Rc::new(RefCell::new(Vec::<String>::new()));
+        let registered = Rc::new(Cell::new(false));
+
+        let first_fired = fired.clone();
+        let first_registered = registered.clone();
+        let late_for_first = fired.clone();
+        register_listener(move |dark| {
+            first_fired.borrow_mut().push(format!("first {dark}"));
+            if !first_registered.replace(true) {
+                let late_fired = late_for_first.clone();
+                register_listener(move |d| late_fired.borrow_mut().push(format!("late {d}")));
+            }
+        });
+        let second_fired = fired.clone();
+        register_listener(move |dark| second_fired.borrow_mut().push(format!("second {dark}")));
+
+        // The pass already running is undisturbed: the late listener is not
+        // called by it (the length was sampled up front).
+        super::broadcast(true);
+        assert_eq!(*fired.borrow(), vec!["first true", "second true"]);
+
+        // The late listener joins the next broadcast.
+        super::broadcast(false);
+        assert_eq!(
+            *fired.borrow(),
+            vec![
+                "first true",
+                "second true",
+                "first false",
+                "second false",
+                "late false"
+            ]
+        );
+    }
 
     #[test]
     fn portal_scheme_uses_freedesktop_color_scheme_values() {
