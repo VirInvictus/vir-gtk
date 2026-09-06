@@ -1,5 +1,39 @@
 # vir-gtk Patch Notes
 
+## v1.0.4 (2026-09-06)
+
+**The broadcast panic repair, plus the recon's small findings.**
+
+*   **Re-entrant broadcasts work, for real this time.** 1.0.3's
+    `broadcast()` kept its index iteration but still held the `LISTENERS`
+    `RefCell` borrow across every callback, so a listener that re-entered
+    the portal mid-broadcast (a `resolve_now()` after a state change, or a
+    `connect_dark_changed()` from inside a callback) panicked with
+    `BorrowMutError`, contradicting the 1.0.3 notes, the roadmap, and the
+    doc comment. Each callback is now cloned out of the borrow and fired
+    outside it: a nested broadcast runs to completion, a mid-pass
+    registration neither panics nor disturbs the running pass, and two
+    regression tests pin both paths.
+*   **A failed session-bus connection is no longer silent.** When
+    `bus_get` cannot reach the session bus (headless machines, a broken
+    portal daemon), the portal degraded to the application default as
+    designed but left no trace. It now emits a `g_warning` on the crate's
+    `vir-gtk` log domain; the fallback behavior itself is unchanged. This
+    is the one path the test suite cannot reach (no bus in the tests).
+*   **Dead `tracing` dependency dropped.** It was declared in
+    `Cargo.toml` and never imported anywhere in the crate.
+*   **CI installs only what the build links.** The workflow still carried
+    `sqlite-devel` and `xorg-x11-server-Xvfb` from the Atrium workflow it
+    was copied from; both are gone.
+*   **Docs:** spec.md's API contract now lists `system_is_dark()` and
+    `resolve_now()`, public since 1.0.3, and its fallback section records
+    the new warning behavior. The roadmap records the Hermitage
+    `theme.py` parity question as an open box instead of leaving it only
+    in the audit folder.
+
+Suite: 11 green (5 theme + 6 portal), clippy `-D warnings` clean,
+`cargo fmt --check` clean.
+
 ## v1.0.3 (2026-09-04)
 
 **Phase 3: the six hidden bugs and both refactors.** Every fix verified
