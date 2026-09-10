@@ -26,6 +26,8 @@ It also ships `base_css()`, the shared flat, square base widget sheet (window ch
 
 The named lifecycle API over that ladder. A `StyleManager` handle is a key to one rung: the crate tier (`USER + 1`), the app tier (`USER + 2`), or any explicit priority above (Conservatory's runtime accent provider lives at `USER + 3`). Each rung can `install` (replacing its previous sheet), `remove` (tearing it down), and be queried with `is_installed`; handles are keys, not owners, so dropping one never uninstalls anything.
 
+The same module ships per-subtree forced palettes: a `ThemeChoice` (`system`, `dark`, or `light`, parsed from the nick forms a GSettings key holds) and a `StyleScope`, which pins one widget subtree (a window, or a page inside one) to the dark or light palette regardless of the system theme. While forced, the target wears the `vir-style-scope` class and a display provider at `USER + 4` serves `base_css` re-spliced with the forced palette plus your own `extra_css` template, all scoped under the class; `bind_settings` drives the choice from a writable string key, and `System` hands the subtree back to the global ladder.
+
 ### The Color Module (`vir_gtk::color`)
 
 For widgets that draw themselves (charts, waveforms, spectrums): `to_gdk_rgba` and `to_cairo_rgba` turn the palette's hex strings into GDK and cairo values (strict CSS hex parsing; malformed input is `None`, not a panic), and `redraw_on_theme_change` re-queues a widget's draw when the portal flips dark/light. Cairo needs no dependency here: the cairo values are plain floats you pass to your own cairo context.
@@ -63,6 +65,23 @@ fn main() {
     let css = format!("{} window {{ background: var(--c-bg-window); }}", palette.to_css_custom_properties());
     install_stylesheet(&css);
 }
+```
+
+The style lifecycle module, for managed rungs and a subtree that forces its own palette (Conservatory's Now Playing full-screen staying dark in a light system theme):
+
+```rust
+use vir_gtk::style::{StyleManager, StyleScope};
+use vir_gtk::theme::Palette;
+
+// Managed ladder rungs: install replaces, remove tears down.
+StyleManager::app_tier().install(&sheet);
+
+// A page forced dark or light by a `gio::Settings` string key holding
+// "system" / "dark" / "light".
+let scope = StyleScope::builder(&now_playing_page)
+    .extra_css(|p| p.replace_tokens(APP_TEMPLATE))
+    .build();
+scope.bind_settings(&settings, "now-playing-theme");
 ```
 
 ## Design Philosophy
