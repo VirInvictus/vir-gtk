@@ -1,5 +1,58 @@
 # vir-gtk Patch Notes
 
+## v1.2.0 (2026-09-10)
+
+**Phase 2 continues: the managed stylesheet lifecycle and the
+forced-palette subtree override.**
+
+*   **`vir_gtk::style::StyleManager` is the named lifecycle API.** The
+    (display, tier) provider registry that 1.0.3 introduced and 1.1.0
+    split into tiers is now a public type: a `StyleManager` handle is a
+    key to one rung of the ladder, `crate_tier()` (USER + 1),
+    `app_tier()` (USER + 2), or `at_priority(prio)` for layers above the
+    app sheet (Conservatory's runtime accent provider sits at USER + 3
+    and becomes formally manageable instead of hand-rolled state). Each
+    rung gets `install` (replace), `remove` (explicit teardown, the one
+    capability the tracking lacked), `is_installed`, and `priority`.
+    Handles are keys, not owners: sheets are display-global state,
+    dropping every handle uninstalls nothing, and clones share the rung.
+    `install_stylesheet`/`install_app_stylesheet` stay in `theme` as
+    one-line delegates, so no consumer import changes.
+*   **`vir_gtk::style::{ThemeChoice, StyleScope}` ship the per-window
+    style overrides.** A `StyleScope` roots at any widget subtree, not
+    just windows, because the motivating case, Conservatory's Now
+    Playing full-screen, is a stack page inside the main window: while
+    the choice forces a palette, the target carries the
+    `vir-style-scope` class and one display provider at USER + 4 (above
+    every global rung, including runtime accent layers) serves
+    `base_css` re-spliced with the forced palette, the app's own
+    `extra_css` template, and a root-canvas rule, all scoped under the
+    class by the new public `scope_css` transform. `ThemeChoice`
+    (`system`/`dark`/`light`) parses the nick forms the portal resolver
+    already accepts; unknown nicks warn on the `vir-gtk` log domain and
+    stand on System. `bind_settings(&settings, key)` makes a writable
+    string key the source of truth and `set_choice` writes back through
+    it when bound; System tears the provider down and hands the subtree
+    back to the global ladder. Widget-scoped `StyleContext` providers
+    were the obvious mechanism and are unusable: deprecated since GTK
+    4.10 and scoped to the single widget anyway, so the shipped shape is
+    the class-scoped display provider Conservatory's accent provider
+    already validated.
+*   **`scope_css(css, class)` is public.** The scoping transform rewrites
+    a flat stylesheet so its rules only match inside a subtree carrying
+    the class: every selector is emitted in descendant form and with the
+    class appended to its final compound, so scope-root subjects still
+    match. Comments and declarations pass through verbatim; tooltips and
+    popovers that do not descend from the scope root keep the global
+    look (a documented edge of the class-scoping mechanism).
+*   **Docs:** spec.md gains a Stylesheet Lifecycle section (§1.4) and the
+    API contract entries; README describes the fourth module with a
+    usage snippet; CLAUDE.md records the managed-lifecycle rule; the
+    roadmap's lifecycle and per-window boxes carry the ship notes.
+
+Suite: 33 green (8 theme + 6 color + 6 portal + 13 style), clippy
+`-D warnings` clean, `cargo fmt --check` clean.
+
 ## v1.1.0 (2026-09-06)
 
 **Phase 2 opens: the shared base stylesheet, the override ladder, and the
