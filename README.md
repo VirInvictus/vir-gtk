@@ -6,7 +6,7 @@ A standalone Rust library that provides the shared GTK4 styling and D-Bus portal
 
 ## Architecture and Capabilities
 
-`vir-gtk` is divided into three primary modules:
+`vir-gtk` is divided into four primary modules:
 
 ### The Portal Module (`vir_gtk::portal`)
 
@@ -21,6 +21,10 @@ The theme module provides the definitive Kanagawa Dragon (dark) and Kanagawa Lot
 It exposes methods to inject these palettes into GTK4 applications. It supports generating standard GTK 4.16+ custom property blocks (e.g., `--c-bg-window`) or performing direct string token replacement (e.g., swapping `%BG_WINDOW%` for the hex code) on legacy CSS stylesheets.
 
 It also ships `base_css()`, the shared flat, square base widget sheet (window chrome, headerbar, lists, buttons, entries, popovers, the Adwaita utility classes, and a scoped focus ring) spliced with a palette, plus a two-tier install ladder: `install_stylesheet` carries the crate's sheets at `USER + 1` and `install_app_stylesheet` carries the application's own sheet at `USER + 2`, so app-specific overrides win by priority rather than by install order.
+
+### The Style Lifecycle Module (`vir_gtk::style`)
+
+The named lifecycle API over that ladder. A `StyleManager` handle is a key to one rung: the crate tier (`USER + 1`), the app tier (`USER + 2`), or any explicit priority above (Conservatory's runtime accent provider lives at `USER + 3`). Each rung can `install` (replacing its previous sheet), `remove` (tearing it down), and be queried with `is_installed`; handles are keys, not owners, so dropping one never uninstalls anything.
 
 ### The Color Module (`vir_gtk::color`)
 

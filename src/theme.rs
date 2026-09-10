@@ -3,8 +3,6 @@
 
 use gtk4 as gtk;
 
-use std::cell::RefCell;
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
     pub bg: &'static str,
@@ -113,34 +111,6 @@ impl Palette {
     }
 }
 
-thread_local! {
-    /// The providers this crate last installed per (display, priority), so a
-    /// re-install on a theme switch replaces its tier's provider instead of
-    /// accumulating providers on the display. GTK objects are `!Send`; styling
-    /// runs on the main thread.
-    static INSTALLED: RefCell<Vec<(gtk::gdk::Display, u32, gtk::CssProvider)>> =
-        const { RefCell::new(Vec::new()) };
-}
-
-fn install_at(css: &str, priority: u32) -> Option<gtk::CssProvider> {
-    let display = gtk::gdk::Display::default()?;
-    let provider = gtk::CssProvider::new();
-    provider.load_from_string(css);
-    INSTALLED.with(|installed| {
-        let mut installed = installed.borrow_mut();
-        if let Some(pos) = installed
-            .iter()
-            .position(|(d, p, _)| d == &display && p == &priority)
-        {
-            let (_, _, old) = installed.remove(pos);
-            gtk::style_context_remove_provider_for_display(&display, &old);
-        }
-        gtk::style_context_add_provider_for_display(&display, &provider, priority);
-        installed.push((display, priority, provider.clone()));
-    });
-    Some(provider)
-}
-
 /// Replace the crate-tier stylesheet previously installed on the default
 /// display (if any) with `css`, at `USER + 1`. Returns the new provider.
 ///
@@ -148,8 +118,9 @@ fn install_at(css: &str, priority: u32) -> Option<gtk::CssProvider> {
 /// palette custom-properties block, and the dark/light re-splice on theme
 /// switches. Application sheets belong on [`install_app_stylesheet`], which
 /// sits one step higher so app rules always win regardless of install order.
+/// It is the [`crate::style::StyleManager::crate_tier`] rung.
 pub fn install_stylesheet(css: &str) -> Option<gtk::CssProvider> {
-    install_at(css, gtk::STYLE_PROVIDER_PRIORITY_USER + 1)
+    crate::style::StyleManager::crate_tier().install(css)
 }
 
 /// Replace the app-tier stylesheet previously installed on the default
@@ -160,9 +131,10 @@ pub fn install_stylesheet(css: &str) -> Option<gtk::CssProvider> {
 /// own sheet installs here, so app-specific rules beat the shared base by
 /// construction instead of by install timing. Call it after (and on every
 /// theme switch alongside) [`install_stylesheet`]; each tier replaces only
-/// its own previous provider.
+/// its own previous provider. It is the
+/// [`crate::style::StyleManager::app_tier`] rung.
 pub fn install_app_stylesheet(css: &str) -> Option<gtk::CssProvider> {
-    install_at(css, gtk::STYLE_PROVIDER_PRIORITY_USER + 2)
+    crate::style::StyleManager::app_tier().install(css)
 }
 
 /// The shared flat, square base widget sheet: window chrome, headerbar,
