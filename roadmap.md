@@ -47,3 +47,48 @@
 - [x] **1.0.4 Consumer Wave (cascade closed per the shared-library rule):** Atrium, Conservatory, and Viaduct re-pinned this crate at 1.0.4 (`864fe82`) and every suite is green: Atrium `cargo test --workspace` 988 passed, Conservatory workspace 633 passed plus the music-only lane 60 passed, Viaduct workspace 222 passed. Adoption commits: Atrium `66faf50` (lock + `data/cargo-sources.json` regen + patchnotes line), Conservatory `43f8625` (lock + patchnotes line), Viaduct `491110e` (lock + patchnotes line, which also records its previously missing 1.0.3 adoption). No consumer code changes were required: the fixed API surface is unchanged. Tag `v1.0.4` cut verbatim on `864fe82` and pushed with the release. *(2026-09-06.)*
 - [x] **1.1.0 Consumer Wave (base_css adoption, cascade closed):** Atrium, Conservatory, and Viaduct adopted `base_css()` and the install ladder at `65f4249`, each moving its deliberate divergences onto `install_app_stylesheet` (USER + 2): Atrium `6b0544d` (@define-color + rounded idiom, `data/style.css` joins USER + 2, cargo-sources regen; suite 988 green), Conservatory `97ebe41` (lifted selection, lit checked, square controls, accent ring to USER + 3; workspace 633 + music-only 60 green), Viaduct `19300e7` (var()-based overrides, hand-rolled provider swap subsumed; suite 222 green). Sheet content preserved rule-for-rule; the visual deltas are Viaduct's newly-covered widget families (switch/check/scale/disabled had no rules before), flagged for Brandon's next display pass. Tag `v1.1.0` cut verbatim on `65f4249` and pushed with the release. *(2026-09-06.)*
 - [x] **1.2.0 Consumer Wave (StyleManager + per-window overrides, cascade closed):** Atrium, Conservatory, and Viaduct re-pinned this crate at `6ffa999`. Both new surfaces are opt-in additions, so no consumer code changes were required. Adoption commits: Atrium `c46cbae` (lock + `data/cargo-sources.json` regen + patchnotes line; workspace suite green, CI `34533472657` green), Conservatory `b2b6891` (lock + patchnotes line; workspace and music-only lanes green), Viaduct `a46ad4b` (lock + patchnotes line; workspace suite green). Tag `v1.2.0` cut verbatim on `6ffa999` and pushed with the release; crate CI `34532984462` green. *(2026-09-10, main-thread execution of the gated cascade tail.)*
+
+## New findings 2026-09-12 (six-lens full audit; detail: audit/FULL-AUDIT-2026-09-12.md, Wave 10)
+
+- [ ] **Library-panic hardening: the SettingChanged callback can panic
+      into a consumer's main loop** (portal.rs:172-179 child_value
+      asserts on malformed bodies; the subscription is not signature-
+      pinned). Use try_child_value with an early return. A library must
+      not panic into host apps.
+- [ ] **Portal robustness:** a stale ReadOne/Read reply can overwrite
+      fresher SettingChanged state (generation counter); changes made
+      while the portal is down are never picked up (watch
+      NameOwnerChanged and re-read); total read failure is silent
+      against the spec's own "degradation is not silent".
+- [ ] **StyleScope leak:** a forced scope's provider stays installed on
+      the display when the target widget dies (connect_destroy cleanup
+      in the forced branch); INSTALLED never prunes closed displays.
+- [ ] **Docs/API surface:** all five portal public functions lack
+      rustdoc (port spec 2's contract lines onto them); Cargo.toml needs
+      description/license/repository; add #![warn(missing_docs)] and
+      crate-level docs; Palette's 15 pub fields undocumented; portal.rs
+      writes gtk-application-prefer-dark-theme globally - document the
+      side effect; the README init example teaches the broken pattern
+      (no listener = never re-splices) - show the loop or ship
+      theme::install_default(); the ladder is a tie-breaker not an
+      override (document the specificity profile).
+- [ ] **CLAUDE/AGENTS/spec exclusion-list correction:** checked paint,
+      selection tint, and typography utilities ARE in base_css by the
+      recorded 1.1.0 majority decisions - the exclusion list forbids
+      rules the sheet carries and would break the byte-stable contract.
+      Reword to row-selection styling / font-family rules per the
+      roadmap resolutions.
+- [ ] **Widget-kit first slice (approved):** unified rows + Alert +
+      close_on_escape; entry_row widened signature reconciles the
+      recorded drift; group() returns the struct (2-of-3); per-consumer
+      adoption boxes; xvfb returns to CI for the gtk tests.
+- [ ] **capi surface enumerated:** theme_install / is_dark /
+      on_dark_changed / palette_css; the one reconciliation is the
+      palette (Framework's backdrop/border/shade variants and drifting
+      hexes vs the crate's 15 slots) - canonical block generator or
+      Framework keeps its table. prefer_dark_chrome() folds the fourth
+      copy of the nudge. icons module candidate (tray theme installer +
+      search-path probe).
+- [ ] **GitHub presentation (workspace batch):** description empty,
+      topics null, zero Releases, README pins branch=main instead of the
+      tag, no consumer list - proposals drafted in the ledger.
