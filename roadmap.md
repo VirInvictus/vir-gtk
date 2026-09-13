@@ -49,6 +49,7 @@
 - [x] **1.0.4 Consumer Wave (cascade closed per the shared-library rule):** Atrium, Conservatory, and Viaduct re-pinned this crate at 1.0.4 (`864fe82`) and every suite is green: Atrium `cargo test --workspace` 988 passed, Conservatory workspace 633 passed plus the music-only lane 60 passed, Viaduct workspace 222 passed. Adoption commits: Atrium `66faf50` (lock + `data/cargo-sources.json` regen + patchnotes line), Conservatory `43f8625` (lock + patchnotes line), Viaduct `491110e` (lock + patchnotes line, which also records its previously missing 1.0.3 adoption). No consumer code changes were required: the fixed API surface is unchanged. Tag `v1.0.4` cut verbatim on `864fe82` and pushed with the release. *(2026-09-06.)*
 - [x] **1.1.0 Consumer Wave (base_css adoption, cascade closed):** Atrium, Conservatory, and Viaduct adopted `base_css()` and the install ladder at `65f4249`, each moving its deliberate divergences onto `install_app_stylesheet` (USER + 2): Atrium `6b0544d` (@define-color + rounded idiom, `data/style.css` joins USER + 2, cargo-sources regen; suite 988 green), Conservatory `97ebe41` (lifted selection, lit checked, square controls, accent ring to USER + 3; workspace 633 + music-only 60 green), Viaduct `19300e7` (var()-based overrides, hand-rolled provider swap subsumed; suite 222 green). Sheet content preserved rule-for-rule; the visual deltas are Viaduct's newly-covered widget families (switch/check/scale/disabled had no rules before), flagged for Brandon's next display pass. Tag `v1.1.0` cut verbatim on `65f4249` and pushed with the release. *(2026-09-06.)*
 - [x] **1.2.0 Consumer Wave (StyleManager + per-window overrides, cascade closed):** Atrium, Conservatory, and Viaduct re-pinned this crate at `6ffa999`. Both new surfaces are opt-in additions, so no consumer code changes were required. Adoption commits: Atrium `c46cbae` (lock + `data/cargo-sources.json` regen + patchnotes line; workspace suite green, CI `34533472657` green), Conservatory `b2b6891` (lock + patchnotes line; workspace and music-only lanes green), Viaduct `a46ad4b` (lock + patchnotes line; workspace suite green). Tag `v1.2.0` cut verbatim on `6ffa999` and pushed with the release; crate CI `34532984462` green. *(2026-09-10, main-thread execution of the gated cascade tail.)*
+- [x] **1.4.0 Consumer Wave (widget-kit first slice + the deferred gtk4 0.11 platform waiver, cascade closed):** release `6deeec9`, tag `v1.4.0` cut verbatim and pushed, crate CI `34780806721` green (fmt + clippy + xvfb test, now spanning the `capi` member). One adoption commit per consumer, each with the lock bump, the code adaptation, a patchnotes line, and a green local suite: Viaduct `ffcd2d6` (deletes `rows.rs` + `alert.rs` entirely, kit re-exported as `ui::rows`; rides gtk4 0.9→0.11 + webkit6 0.4→0.6 per the 1.3.0 waiver; `ViaductWindow`'s wrapper! lists every interface per the Atrium precedent; suite 220 green), Conservatory `aa8cb95` (deletes `dialogs.rs` + the shared subset of `rows.rs`, keeps `Expander`; rides gtk4 0.9→0.11 per the same waiver; workspace 657 + music-only 69 green), Atrium `11a777a` (deletes the shared subset of `rows.rs` + the hand-rolled `Alert`; `dialogs.rs` becomes the kit re-export shim carrying the app-side tokio `AlertChoose::choose_future`; `data/cargo-sources.json` regen; suite 995 + `scripts/regression.sh` PASS). Consumer pushes ride their own repos' batch gates, after this crate's push. The GitHub presentation pass (decision 60) applied the same day; see its box.
 
 ## New findings 2026-09-12 (six-lens full audit; detail: audit/FULL-AUDIT-2026-09-12.md, Wave 10)
 
@@ -164,9 +165,18 @@
       unstarted. Framework adopts at its 1.0.1 (decision 29); the
       MIT-into-GPL attribution note is carried in capi/README.md and the
       capi crate docs.)*
-- [ ] **GitHub presentation (workspace batch):** description empty,
+- [x] **GitHub presentation (workspace batch):** description empty,
       topics null, zero Releases, README pins branch=main instead of the
       tag, no consumer list - proposals drafted in the ledger.
+      *(Applied 2026-09-13 (decision 60): description drafted in the
+      Atrium house voice; ten topics (gtk4, gtk, rust, kanagawa, theme,
+      dark-mode, dbus, linux-desktop, local-first, widget-kit); Releases
+      created for all six tags on the remote (v1.0.3 through v1.4.0),
+      each body the verbatim patchnotes entry with the v1.4.0-shaped
+      title `vX.Y.Z (date)`, v1.4.0 Latest; wiki off; discussions on.
+      v1.0.0-v1.0.2 predate the repo's tags and stay release-less; a
+      backfill remains a separate gated decision. The README now pins
+      the Consumers section added this release.)*
 - [x] **gtk4 0.11 platform bump (1.3.0):** gtk4 0.9 → 0.11 (glib/gio →
       0.22); portal.rs ports `signal_subscribe` to `subscribe_to_signal`
       with the strong `SignalSubscription` held process-lifetime; the
