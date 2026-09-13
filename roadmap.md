@@ -151,20 +151,17 @@
       destroy)` with exactly-once destroy semantics and
       `vir_gtk_disconnect_dark_changed(id)`. Handwritten `vir-gtk.h` and
       `vir-gtk.pc` checked in beside it; the pc Version moves with the
-      release. THREE ITEMS STAY OPEN, recorded here so nothing is
-      silently dropped: (1) `palette_css` is NOT exported because the
-      palette reconciliation is unsettled - Framework's
-      backdrop/border/shade variants and drifting hexes (card #201f1e,
-      accent dragonBlue2, success #8a9a7b) vs the crate's 15 slots
-      (card #1d1c19, accent #c4746e, ok #87a987); Framework keeps its
-      own table until Brandon rules canonical-generator-vs-keep-table.
-      (2) `prefer_dark_chrome()` is not exported; the nudge rides
-      inside `theme_install` via the portal's documented global side
-      effect, which covers the C case. (3) The icons module (tray theme
-      installer + search-path probe) remains a recorded candidate,
-      unstarted. Framework adopts at its 1.0.1 (decision 29); the
-      MIT-into-GPL attribution note is carried in capi/README.md and the
-      capi crate docs.)*
+      release. THREE ITEMS RESOLVED OR RECORDED (updated 2026-09-13,
+      evening): (1) `palette_css` is NOT exported and the question is
+      now SETTLED (Brandon): Framework KEEPS ITS OWN TABLE, no canonical
+      block generator - the capi never grows palette_css unless
+      Framework's roadmap reopens it. (2) `prefer_dark_chrome()` is not
+      exported; the nudge rides inside `theme_install` via the portal's
+      documented global side effect, which covers the C case. (3) The
+      icons module (tray theme installer + search-path probe) remains a
+      recorded candidate, unstarted. Framework adopts at its 1.0.1
+      (decision 29); the MIT-into-GPL attribution note is carried in
+      capi/README.md and the capi crate docs.)*
 - [x] **GitHub presentation (workspace batch):** description empty,
       topics null, zero Releases, README pins branch=main instead of the
       tag, no consumer list - proposals drafted in the ledger.
