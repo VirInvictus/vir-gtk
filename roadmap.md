@@ -171,8 +171,11 @@
       created for all six tags on the remote (v1.0.3 through v1.4.0),
       each body the verbatim patchnotes entry with the v1.4.0-shaped
       title `vX.Y.Z (date)`, v1.4.0 Latest; wiki off; discussions on.
-      v1.0.0-v1.0.2 predate the repo's tags and stay release-less; a
-      backfill remains a separate gated decision. The README now pins
+      v1.0.0-v1.0.2 predate the repo's tags and stay release-less. *
+      (DECIDED 2026-09-13 (Brandon): the backfill is REJECTED; the three
+      stay untagged and release-less under the forward-only policy, per
+      the Viaduct v3.2.1/v3.3.1 precedent. The releases page tells the
+      true tagged history from v1.0.3 onward.)* The README now pins
       the Consumers section added this release.)*
 - [x] **gtk4 0.11 platform bump (1.3.0):** gtk4 0.9 → 0.11 (glib/gio →
       0.22); portal.rs ports `signal_subscribe` to `subscribe_to_signal`
