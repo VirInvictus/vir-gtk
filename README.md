@@ -6,9 +6,9 @@ A standalone Rust library that provides the shared GTK4 styling and D-Bus portal
 
 ## Consumers
 
-- [Atrium](https://github.com/VirInvictus/Atrium) — the GTK4 calendar/task manager (portal, base sheet, style lifecycle, widget kit).
-- [Conservatory](https://github.com/VirInvictus/Conservatory) — the audiobook/podcast player (portal, base sheet, style lifecycle, widget kit).
-- [Viaduct](https://github.com/VirInvictus/Viaduct) — the RSS reader (portal, base sheet, style lifecycle, widget kit).
+- [Atrium](https://github.com/VirInvictus/Atrium): the GTK4 calendar/task manager (portal, base sheet, style lifecycle, widget kit).
+- [Conservatory](https://github.com/VirInvictus/Conservatory): the audiobook/podcast player (portal, base sheet, style lifecycle, widget kit).
+- [Viaduct](https://github.com/VirInvictus/Viaduct): the RSS reader (portal, base sheet, style lifecycle, widget kit).
 - Framework consumes the C API (`capi/`) from 1.0.1, retiring its manual D-Bus portal port.
 
 ## Architecture and Capabilities

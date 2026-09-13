@@ -1,4 +1,4 @@
-/* vir-gtk.h — C API over the shared VirInvictus GTK4 theming layer.
+/* vir-gtk.h: C API over the shared VirInvictus GTK4 theming layer.
  *
  * Portal-driven dark/light theming for C GTK4 applications: the
  * replacement for Framework's manual `fw-theme.c` D-Bus port. Call from
