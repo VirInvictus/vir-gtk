@@ -32,6 +32,10 @@ thread_local! {
     /// alive; dropping the connection would detach the `SettingChanged`
     /// listener.
     static CONNECTION: RefCell<Option<gio::DBusConnection>> = const { RefCell::new(None) };
+    /// The strong subscription handle gio 0.22 hands back from
+    /// `subscribe_to_signal`; dropping it unsubscribes, so it lives next
+    /// to CONNECTION for the process lifetime.
+    static SUBSCRIPTION: RefCell<Option<gio::SignalSubscription>> = const { RefCell::new(None) };
     static LISTENERS: RefCell<Vec<Listener>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -161,14 +165,15 @@ pub fn init(settings: Option<gio::Settings>, settings_key: Option<&str>, default
                 return;
             }
         };
-        conn.signal_subscribe(
+        let subscription = conn.subscribe_to_signal(
             Some("org.freedesktop.portal.Desktop"),
             Some("org.freedesktop.portal.Settings"),
             Some("SettingChanged"),
             Some("/org/freedesktop/portal/desktop"),
             None,
             gio::DBusSignalFlags::NONE,
-            |_, _, _, _, _, params| {
+            |sig| {
+                let params = sig.parameters;
                 let ns = params.child_value(0).get::<String>();
                 let key = params.child_value(1).get::<String>();
                 if ns.as_deref() != Some("org.freedesktop.appearance")
@@ -188,6 +193,7 @@ pub fn init(settings: Option<gio::Settings>, settings_key: Option<&str>, default
         );
         read_portal_scheme_async(&conn);
         CONNECTION.with(|b| *b.borrow_mut() = Some(conn));
+        SUBSCRIPTION.with(|b| *b.borrow_mut() = Some(subscription));
     });
     re_resolve();
     set(&INITIALIZED, true);

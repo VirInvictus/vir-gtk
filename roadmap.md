@@ -92,3 +92,12 @@
 - [ ] **GitHub presentation (workspace batch):** description empty,
       topics null, zero Releases, README pins branch=main instead of the
       tag, no consumer list - proposals drafted in the ledger.
+- [x] **gtk4 0.11 platform bump (1.3.0):** gtk4 0.9 → 0.11 (glib/gio →
+      0.22); portal.rs ports `signal_subscribe` to `subscribe_to_signal`
+      with the strong `SignalSubscription` held process-lifetime; the
+      `v4_14` pin is unchanged and no API surface moves. Cascade:
+      Atrium adopts in the same wave (decision 61, before its 1.0.0
+      tag); Conservatory and Viaduct are WAIVED to adopt at their next
+      releases - 1.3.0 changes no API they call, so both compile
+      against 1.2.0 until then. *(Shipped 2026-09-13; suite 33 green,
+      clippy clean.)*

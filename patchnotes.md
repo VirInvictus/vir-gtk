@@ -1,5 +1,30 @@
 # vir-gtk Patch Notes
 
+## v1.3.0 (2026-09-13)
+
+**The gtk4 0.11 platform bump, so consumers can take the same step
+ahead of their 1.0 freezes (Atrium decision 61: the gtk4 0.11 crate
+lands before its v1.0.0 tag).**
+
+*   **gtk4 dependency moves 0.9 to 0.11** (gtk-rs-core follows: glib
+    and gio land on 0.22). The `v4_14` feature pin is unchanged; no
+    API surface is added or removed.
+*   **portal.rs ports the `SettingChanged` listener to gio 0.22's
+    `subscribe_to_signal`** (the old `signal_subscribe` is deprecated
+    and CI runs clippy `-D warnings`). One behavioral detail carried
+    deliberately: the new API returns a strong `SignalSubscription`
+    whose drop unsubscribes, so the handle now lives in a process-
+    lifetime thread-local next to `CONNECTION` instead of being
+    discarded. Listener lifetime is unchanged in practice; the
+    teardown path is now explicit rather than incidental.
+*   Suite green (33 tests), clippy clean on the new stack.
+
+**Cascade (consumers):** Atrium adopts in the same wave (decision 61).
+Conservatory and Viaduct adopt at their next releases; this roadmap
+records that waiver so the wave counts as closed; both consumers
+compile against 1.2.0 until then, and vir-gtk 1.3.0 changes none of
+the API they call (the portal port is internal).
+
 ## v1.2.0 (2026-09-10)
 
 **Phase 2 continues: the managed stylesheet lifecycle and the
