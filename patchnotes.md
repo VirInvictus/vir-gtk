@@ -1,5 +1,80 @@
 # vir-gtk Patch Notes
 
+## v1.4.0 (2026-09-13)
+
+**The widget-kit first slice, the portal hardening from the six-lens
+audit, the capi surface, and the docs debt, in one cascade release.**
+
+*   **`vir_gtk::widgets`, the approved first slice.** The shared
+    plain-GTK row family (`row`, `action_row`, `switch_row`, `spin_row`,
+    `combo_row`, `button_row`, `entry_row`), `Group`, `Alert`, and
+    `close_on_escape` move into the crate from the near-verbatim copies
+    Atrium, Conservatory, and Viaduct each carried. `entry_row` takes
+    the widened four-`Option` signature (title, subtitle, text,
+    placeholder) that reconciles the three historical shapes.
+    `Alert` ships on the Atrium/Conservatory shape: named responses with
+    per-response appearance, a default response for Enter, and exactly
+    one response id per presentation (dismissal without a button emits
+    the close response). `close_on_escape` uses the capture-phase,
+    weakly-held window shape. Expander rows, StatusPage, toasts, Clamp,
+    and Page/Bin stay application-side by the slice rule, as does
+    Atrium's tokio-based `choose_future` (the kit is sync-only; a thin
+    wrapper over `connect_response` covers it app-side).
+*   **`theme::install_default()`** starts the portal and keeps the base
+    sheet re-spliced on the crate tier for the process lifetime. This is
+    also the honest fix for the README's old init example, which taught
+    a pattern that never re-spliced after startup; the manual loop now
+    appears in the README as the alternative, not the default.
+*   **Library-panic hardening.** The `SettingChanged` handler reads the
+    signal body through `try_child_value` with early returns, so a
+    malformed D-Bus body degrades to "not our key" instead of panicking
+    into a consumer's main loop. Regression tests pin the shapes that
+    used to panic.
+*   **Portal robustness.** A generation counter stamps every portal read
+    at issue; a live signal apply bumps it and a stale `ReadOne`/`Read`
+    reply drops instead of overwriting fresher state. A
+    `NameOwnerChanged` watcher re-reads when the portal name is
+    acquired, so a portal that starts late or restarts has its missed
+    changes picked up. Total failure of both read shapes now warns on
+    the `vir-gtk` log domain instead of standing silently.
+*   **StyleScope leak closed.** A scope whose target dies while a
+    palette is forced now tears its display provider down on the
+    target's destroy; before, the provider stayed installed forever.
+    The (display, tier) registry also prunes closed displays.
+*   **`capi/` member: the C-ABI surface** (`vir-gtk-capi` cdylib +
+    staticlib, handwritten `vir-gtk.h`, `vir-gtk.pc`) built from
+    Framework's `fw-theme.c` call surface: `vir_gtk_theme_install`,
+    `vir_gtk_is_dark`, `vir_gtk_on_dark_changed`,
+    `vir_gtk_disconnect_dark_changed`. `palette_css` is deliberately not
+    exported yet: the palette reconciliation against Framework's
+    backdrop/border/shade table is unsettled and recorded open in the
+    roadmap. Framework adopts at its 1.0.1 (decision 29).
+*   **Docs surface.** Cargo.toml gains description/license/repository;
+    the crate has a real docs landing plus `#![warn(missing_docs)]`; all
+    five portal functions carry their contract rustdoc; every Palette
+    field is documented; the `gtk-application-prefer-dark-theme` global
+    side effect is documented where it happens; the style docs and spec
+    record that the ladder is a tie-breaker, not a trump (GTK CSS
+    specificity beats provider priority). The CLAUDE/AGENTS/spec
+    exclusion list is corrected to what base_css actually carries (the
+    1.1.0 majority rules: checked paint, text selection tint,
+    typography utilities are IN the base; row-selection styling,
+    radius, `@define-color`, and font-family rules stay app-side).
+*   **Xvfb returned to CI** for the new `#[gtk::test]` widget, scope,
+    and install_default tests (the 1.0.3 drop was for the old
+    display-free suite). Suite: 51 tests + doc-test, clippy `-D
+    warnings` clean, fmt clean, now spanning the crate and the capi
+    member.
+
+**Cascade (consumers):** one adoption commit per consumer, each with
+the lock bump and a green suite: Atrium (deletes the shared subset of
+`rows.rs` and `dialogs.rs`' Alert, keeps `Page`/`Bin` and the tokio
+`choose_future` wrapper, `entry_row` call sites adapt to the widened
+signature), Conservatory (likewise, keeps `Expander`), Viaduct (deletes
+`rows.rs` and `alert.rs`, adapts its tuple-group and `ResponseStyle`
+call sites). Wave detail and commit hashes in the roadmap's 1.4.0 wave
+record.
+
 ## v1.3.0 (2026-09-13)
 
 **The gtk4 0.11 platform bump, so consumers can take the same step

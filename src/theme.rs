@@ -2,23 +2,43 @@
 //! Shared Kanagawa themes and CSS utilities.
 
 use gtk4 as gtk;
+use std::cell::RefCell;
 
+/// The fifteen palette slots every sheet and template splices from. Each is
+/// a strict `#rrggbb` hex string (parseable by [`crate::color`] and valid
+/// directly in CSS).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Palette {
+    /// The deepest background tone, behind everything (Kanagawa's sumiInk).
     pub bg: &'static str,
+    /// The default window canvas.
     pub bg_window: &'static str,
+    /// Content views: lists, editors, large reading surfaces.
     pub bg_view: &'static str,
+    /// Header bars and title chrome.
     pub bg_header: &'static str,
+    /// Cards, dialogs, popovers, boxed groups.
     pub bg_card: &'static str,
+    /// The primary foreground (body text).
     pub fg: &'static str,
+    /// Secondary foreground: captions, dim labels, placeholders.
     pub fg_dim: &'static str,
+    /// Headings and emphasized text (Kanagawa's carpYellow family).
     pub heading: &'static str,
+    /// The single action accent: checked controls, suggested actions,
+    /// focus rings, selection tints.
     pub accent: &'static str,
+    /// Text drawn on top of [`Palette::accent`].
     pub on_accent: &'static str,
+    /// Hairline borders, separators, insensitive strokes.
     pub grid: &'static str,
+    /// Cautionary states (the `warning` utility class).
     pub warn: &'static str,
+    /// Destructive and error states (the `error` utility class).
     pub err: &'static str,
+    /// Success states (the `success` utility class).
     pub ok: &'static str,
+    /// Raised surfaces one step above the window (OSD plates, hovered chrome).
     pub bg_raised: &'static str,
 }
 
@@ -135,6 +155,62 @@ pub fn install_stylesheet(css: &str) -> Option<gtk::CssProvider> {
 /// [`crate::style::StyleManager::app_tier`] rung.
 pub fn install_app_stylesheet(css: &str) -> Option<gtk::CssProvider> {
     crate::style::StyleManager::app_tier().install(css)
+}
+
+thread_local! {
+    /// The owner object [`install_default`] registers its re-splice listener
+    /// against, kept for the process lifetime so the weakly-held listener
+    /// stays live. Created once; a second `install_default` re-splices
+    /// without registering a duplicate.
+    static DEFAULT_INSTALL_OWNER: RefCell<Option<gtk::glib::Object>> =
+        const { RefCell::new(None) };
+}
+
+/// One-call initialization for applications without their own stylesheet:
+/// start the portal ([`crate::portal::init`]) and keep the crate tier
+/// ([`install_stylesheet`]) carrying [`base_css`] spliced with the palette
+/// the resolved state calls for, forever. The re-splice is the loop the
+/// manual pattern in the README needs three steps for: on every portal flip
+/// the sheet is regenerated and replaced on its rung, and applications
+/// styling on top install their own sheet at the app tier as usual.
+///
+/// Without this loop (or a hand-rolled equivalent) a portal flip updates
+/// the portal's state but nothing redraws themed: the initial splice is the
+/// only one that ever happens.
+///
+/// `default_dark` is the pre-portal and no-preference fallback, as in
+/// [`crate::portal::init`]. The call is idempotent: a second call re-splices
+/// with the current state instead of stacking another listener.
+///
+/// Note [`crate::portal::init`]'s documented side effect applies here too:
+/// the global `gtk-application-prefer-dark-theme` key tracks the resolved
+/// state.
+pub fn install_default(default_dark: bool) {
+    crate::portal::init(None, None, default_dark);
+    let needs_listener = DEFAULT_INSTALL_OWNER.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        let missing = slot.is_none();
+        if missing {
+            *slot = Some(gtk::glib::Object::new::<gtk::glib::Object>());
+        }
+        missing
+    });
+    if needs_listener {
+        let owner = DEFAULT_INSTALL_OWNER.with(|slot| slot.borrow().clone());
+        if let Some(owner) = owner {
+            crate::portal::connect_dark_changed(&owner, |_| resplice_default());
+        }
+    }
+    resplice_default();
+}
+
+fn resplice_default() {
+    let palette = if crate::portal::is_dark() {
+        Palette::dragon()
+    } else {
+        Palette::lotus()
+    };
+    install_stylesheet(&base_css(&palette));
 }
 
 /// The shared flat, square base widget sheet: window chrome, headerbar,
@@ -277,6 +353,7 @@ scale:focus-visible { outline: 1px solid %ACCENT%; outline-offset: -1px; }
 
 #[cfg(test)]
 mod tests {
+    use super::gtk;
     use super::Palette;
 
     #[test]
@@ -385,6 +462,21 @@ mod tests {
         assert!(dark.contains("#181616"));
         assert!(light.contains("#e7dba0"));
         assert_ne!(dark, light);
+    }
+
+    #[gtk::test]
+    fn install_default_splices_the_crate_tier_and_is_idempotent() {
+        // The README's broken pattern taught init + one splice; this is the
+        // fixed half: the crate tier ends up carrying the sheet and a second
+        // call re-splices instead of stacking a duplicate listener.
+        gtk::init().unwrap();
+        super::install_default(true);
+        let tier = crate::style::StyleManager::crate_tier();
+        assert!(tier.is_installed());
+        super::install_default(true);
+        assert!(tier.is_installed());
+        tier.remove();
+        assert!(!tier.is_installed());
     }
 
     #[test]

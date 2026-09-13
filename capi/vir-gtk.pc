@@ -1,0 +1,11 @@
+prefix=/usr/local
+libdir=${prefix}/lib
+includedir=${prefix}/include
+
+Name: vir-gtk
+Description: Shared GTK4 styling and D-Bus portal layer for the VirInvictus desktop suite (C API)
+URL: https://github.com/VirInvictus/vir-gtk
+Version: 1.4.0
+Requires: gtk4
+Libs: -L${libdir} -lvir_gtk_capi
+Cflags: -I${includedir}/vir-gtk

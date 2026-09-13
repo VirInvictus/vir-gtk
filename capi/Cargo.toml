@@ -1,0 +1,15 @@
+[package]
+name = "vir-gtk-capi"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "C-ABI surface over vir-gtk: portal-driven dark/light theming for C GTK4 applications"
+repository = "https://github.com/VirInvictus/vir-gtk"
+
+[lib]
+name = "vir_gtk_capi"
+crate-type = ["cdylib", "staticlib"]
+
+[dependencies]
+gtk4 = { version = "0.11", features = ["v4_14"] }
+vir-gtk = { path = ".." }

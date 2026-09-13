@@ -4,15 +4,24 @@ A standalone Rust library that provides the shared GTK4 styling and D-Bus portal
 
 `vir-gtk` exists to replace `libadwaita`. It provides the foundational visual identity for `Atrium`, `Conservatory`, and `Viaduct`, injecting a bespoke Kanagawa-themed framework directly into standard GTK4 widgets. (Colophon and Framework still style themselves; the roadmap's Phase 2 tracks the palette/registry migration and the C-ABI for Framework.) By centralizing the theme engine and D-Bus color-scheme portal listener, the applications using it maintain pixel-perfect consistency and respond instantly to system-wide dark/light mode toggles without duplicating boilerplate.
 
+## Consumers
+
+- [Atrium](https://github.com/VirInvictus/Atrium) — the GTK4 calendar/task manager (portal, base sheet, style lifecycle, widget kit).
+- [Conservatory](https://github.com/VirInvictus/Conservatory) — the audiobook/podcast player (portal, base sheet, style lifecycle, widget kit).
+- [Viaduct](https://github.com/VirInvictus/Viaduct) — the RSS reader (portal, base sheet, style lifecycle, widget kit).
+- Framework consumes the C API (`capi/`) from 1.0.1, retiring its manual D-Bus portal port.
+
 ## Architecture and Capabilities
 
-`vir-gtk` is divided into four primary modules:
+`vir-gtk` is divided into five primary modules:
 
 ### The Portal Module (`vir_gtk::portal`)
 
 The portal module is responsible for reading and monitoring the system's preferred color scheme via the `org.freedesktop.portal.Settings` D-Bus interface.
 
-It handles the complexity of composing the desktop's system color scheme against an application's internal preferences (for example, if a user sets the app to `force-dark` while the system is light). It exposes an `is_dark()` accessor and a change-listener registry that drops dead weak references safely, ensuring no memory leaks occur across the application lifecycle.
+It handles the complexity of composing the desktop's system color scheme against an application's internal preferences (for example, if a user sets the app to `force-dark` while the system is light). It exposes an `is_dark()` accessor and a change-listener registry that drops dead weak references safely, ensuring no memory leaks occur across the application lifecycle. Malformed portal bodies degrade instead of panicking, stale read replies cannot overwrite fresher signal state, and the module re-reads when the portal process (re)starts, so changes made while it was down are picked up.
+
+Note the one global side effect: on every composed change, the `gtk-application-prefer-dark-theme` key on the default `GtkSettings` tracks the resolved state.
 
 ### The Theme Module (`vir_gtk::theme`)
 
@@ -26,11 +35,17 @@ It also ships `base_css()`, the shared flat, square base widget sheet (window ch
 
 The named lifecycle API over that ladder. A `StyleManager` handle is a key to one rung: the crate tier (`USER + 1`), the app tier (`USER + 2`), or any explicit priority above (Conservatory's runtime accent provider lives at `USER + 3`). Each rung can `install` (replacing its previous sheet), `remove` (tearing it down), and be queried with `is_installed`; handles are keys, not owners, so dropping one never uninstalls anything.
 
-The same module ships per-subtree forced palettes: a `ThemeChoice` (`system`, `dark`, or `light`, parsed from the nick forms a GSettings key holds) and a `StyleScope`, which pins one widget subtree (a window, or a page inside one) to the dark or light palette regardless of the system theme. While forced, the target wears the `vir-style-scope` class and a display provider at `USER + 4` serves `base_css` re-spliced with the forced palette plus your own `extra_css` template, all scoped under the class; `bind_settings` drives the choice from a writable string key, and `System` hands the subtree back to the global ladder.
+The same module ships per-subtree forced palettes: a `ThemeChoice` (`system`, `dark`, or `light`, parsed from the nick forms a GSettings key holds) and a `StyleScope`, which pins one widget subtree (a window, or a page inside one) to the dark or light palette regardless of the system theme. While forced, the target wears the `vir-style-scope` class and a display provider at `USER + 4` serves `base_css` re-spliced with the forced palette plus your own `extra_css` template, all scoped under the class; `bind_settings` drives the choice from a writable string key, `System` hands the subtree back to the global ladder, and the target's destroy tears the provider down.
+
+The ladder is a tie-breaker, not a trump: GTK CSS decides by specificity first and only falls back to provider priority for equal-specificity rules. Match the base rule's selector shape when overriding, or the app sheet's more general rule can lose to the base's more specific one.
 
 ### The Color Module (`vir_gtk::color`)
 
 For widgets that draw themselves (charts, waveforms, spectrums): `to_gdk_rgba` and `to_cairo_rgba` turn the palette's hex strings into GDK and cairo values (strict CSS hex parsing; malformed input is `None`, not a panic), and `redraw_on_theme_change` re-queues a widget's draw when the portal flips dark/light. Cairo needs no dependency here: the cairo values are plain floats you pass to your own cairo context.
+
+### The Widget Kit (`vir_gtk::widgets`)
+
+The shared plain-GTK row and dialog builders: `row`/`action_row`/`switch_row`/`spin_row`/`combo_row`/`button_row`/`entry_row` and the `Group` box, plus `Alert`, the modal dialog replacement with named, styled responses and a close-response guarantee, and `close_on_escape`. Deliberately adwaita-shaped so call sites port mechanically; composite widgets like StatusPage and Clamp stay application-side.
 
 ## Installation
 
@@ -41,29 +56,47 @@ Add this to your `Cargo.toml`:
 vir-gtk = { git = "https://github.com/VirInvictus/vir-gtk.git", branch = "main" }
 ```
 
+A C application consumes the same engine through the `vir-gtk-capi` cdylib (header and pkg-config file under [`capi/`](capi/)).
+
 ## Usage
 
-A standard initialization block in a VirInvictus application sets up the portal listener and applies the stylesheet based on the initial system state.
+The one-call setup: start the portal and keep the shared base sheet spliced with the palette the resolved state calls for, on every flip, forever.
+
+```rust
+use vir_gtk::theme;
+
+fn main() {
+    // true = fall back dark until the portal answers (and on "no preference").
+    theme::install_default(true);
+}
+```
+
+The manual equivalent, for applications that build their own sheets: `init()` seeds the state and the portal listener, and the callback re-splices on every flip. Without that loop (or `install_default`), the initial splice is the only one that ever happens and the app never follows the system again.
 
 ```rust
 use vir_gtk::portal;
-use vir_gtk::theme::{Palette, install_stylesheet};
+use vir_gtk::theme::{base_css, install_stylesheet, Palette};
 
-fn main() {
-    // Initialize the portal listener to sync with system dark/light mode.
-    // The arguments allow you to bind the listener to an app's gio::Settings.
-    portal::init(None, None, true);
-
-    // Fetch the correct palette based on the portal's resolved state.
+fn resplice() {
     let palette = if portal::is_dark() {
         Palette::dragon()
     } else {
         Palette::lotus()
     };
+    install_stylesheet(&base_css(&palette));
+}
 
-    // Generate the CSS custom properties block and inject it.
-    let css = format!("{} window {{ background: var(--c-bg-window); }}", palette.to_css_custom_properties());
-    install_stylesheet(&css);
+fn main() {
+    // The arguments allow you to compose an app's gio::Settings key.
+    portal::init(None, None, true);
+
+    // The callback fires on the main loop for every state change. The
+    // owner can be any GObject the application keeps alive; here, its
+    // `gtk::Application` (declared elsewhere in a real app).
+    portal::connect_dark_changed(&app, |_| resplice());
+
+    // Re-splice once now, so startup is themed before the portal answers.
+    resplice();
 }
 ```
 
@@ -71,7 +104,6 @@ The style lifecycle module, for managed rungs and a subtree that forces its own 
 
 ```rust
 use vir_gtk::style::{StyleManager, StyleScope};
-use vir_gtk::theme::Palette;
 
 // Managed ladder rungs: install replaces, remove tears down.
 StyleManager::app_tier().install(&sheet);

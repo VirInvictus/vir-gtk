@@ -8,7 +8,15 @@
 //! layers above that (Conservatory's runtime accent provider sits at
 //! `USER + 3`) is just another rung. Second, handles are keys, not owners:
 //! a stylesheet is display-global state, so dropping a [`StyleManager`]
-//! changes nothing; teardown is explicit ([`StyleManager::remove`]).
+//! changes nothing; teardown is explicit ([`StyleManager::remove`]) or
+//! structural (a [`StyleScope`]'s destroy hook).
+//!
+//! One caveat keeps surprises away: the ladder is a tie-breaker, not a
+//! trump. GTK CSS matches by specificity first and only falls back to
+//! provider priority for equal-specificity rules, so a more specific
+//! selector in a lower sheet beats a less specific one above it (an
+//! application's bare `window {}` loses to a base sheet's `window.csd`);
+//! overrides should match the rule they mean to beat.
 
 use std::cell::{Cell, RefCell};
 use std::rc::Rc;
@@ -35,6 +43,7 @@ fn install_at(css: &str, priority: u32) -> Option<gtk::CssProvider> {
     provider.load_from_string(css);
     INSTALLED.with(|installed| {
         let mut installed = installed.borrow_mut();
+        prune_closed_displays(&mut installed);
         if let Some(pos) = installed
             .iter()
             .position(|(d, p, _)| d == &display && p == &priority)
@@ -54,6 +63,7 @@ fn remove_at(priority: u32) {
     };
     INSTALLED.with(|installed| {
         let mut installed = installed.borrow_mut();
+        prune_closed_displays(&mut installed);
         if let Some(pos) = installed
             .iter()
             .position(|(d, p, _)| d == &display && p == &priority)
@@ -69,11 +79,21 @@ fn is_installed_at(priority: u32) -> bool {
         return false;
     };
     INSTALLED.with(|installed| {
+        let mut installed = installed.borrow_mut();
+        prune_closed_displays(&mut installed);
         installed
-            .borrow()
             .iter()
             .any(|(d, p, _)| d == &display && p == &priority)
     })
+}
+
+/// Drop registry entries whose display has been closed (a windowing-system
+/// disconnect leaves the objects alive in the registry but permanently
+/// unusable), so a session that opens and closes displays does not grow the
+/// registry without bound. The registry holds strong references, so without
+/// this the closed `Display` objects themselves also pile up.
+fn prune_closed_displays(installed: &mut Vec<(gtk::gdk::Display, u32, gtk::CssProvider)>) {
+    installed.retain(|(display, _, _)| !display.is_closed());
 }
 
 /// A handle to one rung of the stylesheet ladder: the (display, priority)
@@ -275,10 +295,10 @@ type ExtraCss = Rc<dyn Fn(&Palette) -> String>;
 /// The scope re-applies only when its choice changes: forced palettes are
 /// palette-fixed, and `System` tracks the global state through the app's own
 /// display-tier re-splice on portal flips. The provider is display-global
-/// and class-scoped, so it dies structurally with the window the target
-/// lives in; a `StyleScope` handle is a controller, not an owner, and
-/// dropping it changes nothing. The type is `!Send`; keep it on the main
-/// thread, next to the widget it scopes.
+/// and class-scoped, so the scope wires the target's destroy to tear it
+/// down; a `StyleScope` handle is a controller, not an owner, and dropping
+/// it changes nothing. The type is `!Send`; keep it on the main thread, next
+/// to the widget it scopes.
 #[derive(Clone)]
 pub struct StyleScope {
     target: glib::WeakRef<gtk::Widget>,
@@ -420,6 +440,25 @@ impl StyleScopeBuilder {
             provider: Rc::new(RefCell::new(None)),
             bound: Rc::new(RefCell::new(None)),
         };
+        // If the target dies while a palette is forced, the class-scoped
+        // provider would otherwise stay installed on the display forever:
+        // it is display-global state and only the class dies with the
+        // widget. The handler holds the provider slot weakly, so it neither
+        // keeps the scope alive nor fires for anything but this widget.
+        if let Some(widget) = scope.target.upgrade() {
+            let provider = Rc::downgrade(&scope.provider);
+            widget.connect_destroy(move |_| {
+                let Some(slot) = provider.upgrade() else {
+                    return;
+                };
+                let Some(provider) = slot.borrow_mut().take() else {
+                    return;
+                };
+                if let Some(display) = gtk::gdk::Display::default() {
+                    gtk::style_context_remove_provider_for_display(&display, &provider);
+                }
+            });
+        }
         scope.apply();
         scope
     }
@@ -573,5 +612,30 @@ mod tests {
     #[test]
     fn scope_css_of_an_empty_sheet_is_empty() {
         assert_eq!(scope_css("", "sc"), "");
+    }
+
+    #[gtk::test]
+    fn a_forced_scope_tears_its_provider_down_when_the_target_dies() {
+        // The 2026-09-12 leak: the provider is display-global, so a target
+        // destroyed while a palette was forced left the provider (and its
+        // forced palette over the whole display's scoped subtrees) installed
+        // forever. The destroy wiring must empty the slot.
+        gtk::init().unwrap();
+        let widget = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        let scope = StyleScope::builder(&widget).build();
+        scope.set_choice(ThemeChoice::Dark);
+        assert!(scope.provider.borrow().is_some());
+        // Dropping the last reference disposes the widget, which fires the
+        // destroy signal synchronously.
+        drop(widget);
+        assert!(scope.provider.borrow().is_none());
+        // Re-forcing after teardown installs a fresh provider: the wiring
+        // is a cleanup hook, not a one-shot latch on the scope.
+        let widget = gtk::Box::new(gtk::Orientation::Horizontal, 0);
+        let scope = StyleScope::builder(&widget).build();
+        scope.set_choice(ThemeChoice::Dark);
+        assert!(scope.provider.borrow().is_some());
+        scope.set_choice(ThemeChoice::System);
+        assert!(scope.provider.borrow().is_none());
     }
 }

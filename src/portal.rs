@@ -17,7 +17,7 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use std::cell::RefCell;
 use std::rc::Rc;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 
 type Listener = (glib::WeakRef<glib::Object>, Rc<dyn Fn(bool)>);
 
@@ -25,6 +25,12 @@ static INITIALIZED: AtomicBool = AtomicBool::new(false);
 static SYSTEM_DARK: AtomicBool = AtomicBool::new(true);
 static RESOLVED_DARK: AtomicBool = AtomicBool::new(true);
 static DEFAULT_DARK: AtomicBool = AtomicBool::new(true);
+/// Bumped every time a live `SettingChanged` signal applies. A read reply
+/// carries the generation it was issued at and is dropped as stale if the
+/// generation moved meanwhile, so a slow `ReadOne`/`Read` reply can never
+/// overwrite fresher signal state (the 2026-09-12 audit's initial-read
+/// race).
+static PORTAL_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
     static SETTINGS: RefCell<Option<(gio::Settings, String)>> = const { RefCell::new(None) };
@@ -36,6 +42,9 @@ thread_local! {
     /// `subscribe_to_signal`; dropping it unsubscribes, so it lives next
     /// to CONNECTION for the process lifetime.
     static SUBSCRIPTION: RefCell<Option<gio::SignalSubscription>> = const { RefCell::new(None) };
+    /// Same deal for the bus-daemon `NameOwnerChanged` watcher that re-reads
+    /// on portal (re)start.
+    static OWNER_SUBSCRIPTION: RefCell<Option<gio::SignalSubscription>> = const { RefCell::new(None) };
     static LISTENERS: RefCell<Vec<Listener>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -48,6 +57,52 @@ fn portal_scheme_preference(scheme: u32) -> Option<bool> {
         2 => Some(false),
         _ => None,
     }
+}
+
+/// Extract the `color-scheme` value from a `SettingChanged` signal body:
+/// `Some(scheme)` only when the body is well-formed AND names
+/// `org.freedesktop.appearance` / `color-scheme`; `None` otherwise.
+///
+/// Every child access goes through `try_child_value`: the signal body is
+/// whatever the sender put on the bus, and `child_value` panics on an
+/// out-of-range index. A malformed body must degrade to "not our key", never
+/// panic into the consumer's main loop.
+fn setting_changed_scheme(params: &glib::Variant) -> Option<u32> {
+    let ns = params.try_child_value(0)?.get::<String>()?;
+    let key = params.try_child_value(1)?.get::<String>()?;
+    if ns != "org.freedesktop.appearance" || key != "color-scheme" {
+        return None;
+    }
+    params.try_child_value(2)?.as_variant()?.get::<u32>()
+}
+
+/// Whether a `NameOwnerChanged` body says the portal name was just acquired
+/// (`Some(scheme)`-shaped guard for the re-read): only when the acquired name
+/// is `org.freedesktop.portal.Desktop` and the new owner is non-empty. The
+/// portal appearing (at startup, or after a restart) is the cue to re-read;
+/// its disappearing needs no action, the next acquisition re-reads.
+fn portal_name_acquired(params: &glib::Variant) -> bool {
+    let Some(name) = params.try_child_value(0).and_then(|v| v.get::<String>()) else {
+        return false;
+    };
+    if name != "org.freedesktop.portal.Desktop" {
+        return false;
+    }
+    params
+        .try_child_value(2)
+        .and_then(|v| v.get::<String>())
+        .is_some_and(|owner| !owner.is_empty())
+}
+
+/// A read reply is stale when the generation advanced between issuing the
+/// read and the reply landing; the reply then carries pre-signal data and
+/// must be dropped.
+fn read_reply_is_stale(issued_generation: u64) -> bool {
+    PORTAL_GENERATION.load(Ordering::Relaxed) != issued_generation
+}
+
+fn portal_generation() -> u64 {
+    PORTAL_GENERATION.load(Ordering::Relaxed)
 }
 
 fn resolve_is_dark(nick: &str, system_dark: bool) -> bool {
@@ -66,14 +121,31 @@ fn set(atom: &AtomicBool, value: bool) {
     atom.store(value, Ordering::Relaxed);
 }
 
+/// The raw system preference, before composition against the application's
+/// `gio::Settings`: what the desktop environment last broadcast (or the
+/// application default before the portal's answer lands). Safe from any
+/// thread.
 pub fn system_is_dark() -> bool {
     get(&SYSTEM_DARK)
 }
 
+/// The composed dark/light state: the portal's system preference composed
+/// against the application's bound settings key (`force-dark` and
+/// `force-light` win; the application default stands until the portal's
+/// answer arrives). Safe from any thread.
+///
+/// Note the state moves asynchronously: right after [`init()`] this is the
+/// application default, and the portal's answer (and every later system flip)
+/// lands through the main loop. Register a listener with
+/// [`connect_dark_changed()`] to re-splice styles when it moves.
 pub fn is_dark() -> bool {
     get(&RESOLVED_DARK)
 }
 
+/// Re-run the composition immediately from the stored settings key and the
+/// current system preference, broadcasting to listeners only when the
+/// composed state changed. Safe from the main thread; call after mutating a
+/// bound settings key directly.
 pub fn resolve_now() {
     re_resolve();
 }
@@ -104,6 +176,16 @@ fn re_resolve() {
     broadcast(dark);
 }
 
+/// Register `f` to fire whenever the composed dark/light state changes. The
+/// `owner` is held as a weak reference, so callbacks bound to UI elements
+/// stop firing (and are pruned at the next broadcast) when the element dies.
+/// Callbacks run on the thread that runs the main loop.
+///
+/// This is the hook that keeps styles live: `init()` seeds the initial state
+/// and the portal listener, and each state change broadcasts to these
+/// callbacks, so an application that wants its sheets to follow the system
+/// re-splices inside the callback (or calls [`crate::theme::install_default`]
+/// and skips the manual loop).
 pub fn connect_dark_changed<F>(owner: &impl IsA<glib::Object>, f: F)
 where
     F: Fn(bool) + 'static,
@@ -140,6 +222,22 @@ fn broadcast(dark: bool) {
     }
 }
 
+/// Initialize the portal: seed the state, wire the optional settings
+/// composition, and start the asynchronous D-Bus work. Call once during
+/// application startup, from the main thread; it returns without blocking,
+/// and the portal's current scheme arrives through the main loop.
+///
+/// `settings` + `settings_key` bind the composition to a `gio::Settings`
+/// string key (e.g. `"theme"` holding `system`/`dark`/`light`/
+/// `force-dark`/`force-light`); explicit overrides beat the system
+/// broadcast. `default_dark` is the pre-portal and no-preference fallback.
+///
+/// Side effect, documented because applications that manage it themselves
+/// would silently fight this crate: on every composed change the global
+/// `GtkSettings:gtk-application-prefer-dark-theme` is set to the resolved
+/// state. Applications needing exclusive control of that key should not
+/// compose through this crate, or should re-assert their value after portal
+/// flips.
 pub fn init(settings: Option<gio::Settings>, settings_key: Option<&str>, default_dark: bool) {
     if get(&INITIALIZED) {
         return;
@@ -173,27 +271,38 @@ pub fn init(settings: Option<gio::Settings>, settings_key: Option<&str>, default
             None,
             gio::DBusSignalFlags::NONE,
             |sig| {
-                let params = sig.parameters;
-                let ns = params.child_value(0).get::<String>();
-                let key = params.child_value(1).get::<String>();
-                if ns.as_deref() != Some("org.freedesktop.appearance")
-                    || key.as_deref() != Some("color-scheme")
-                {
-                    return;
-                }
-                let Some(scheme) = params
-                    .child_value(2)
-                    .as_variant()
-                    .and_then(|v| v.get::<u32>())
-                else {
+                let Some(scheme) = setting_changed_scheme(sig.parameters) else {
                     return;
                 };
+                bump_portal_generation();
                 apply_portal_scheme(scheme);
+            },
+        );
+        // Watch the bus daemon for the portal name appearing: the first
+        // arrival (the portal can start after the application) and every
+        // restart after a crash trigger a fresh read, so changes made while
+        // no portal was up are picked up instead of being lost until the
+        // next signal.
+        let reread_conn = conn.clone();
+        let owner_subscription = conn.subscribe_to_signal(
+            Some("org.freedesktop.DBus"),
+            Some("org.freedesktop.DBus"),
+            Some("NameOwnerChanged"),
+            Some("/org/freedesktop/DBus"),
+            Some("org.freedesktop.portal.Desktop"),
+            gio::DBusSignalFlags::NONE,
+            move |sig| {
+                if portal_name_acquired(sig.parameters) {
+                    read_portal_scheme_async(&reread_conn);
+                }
             },
         );
         read_portal_scheme_async(&conn);
         CONNECTION.with(|b| *b.borrow_mut() = Some(conn));
         SUBSCRIPTION.with(|b| *b.borrow_mut() = Some(subscription));
+        // Held next to the SettingChanged subscription for the same reason:
+        // dropping it would unsubscribe the restart watcher.
+        OWNER_SUBSCRIPTION.with(|b| *b.borrow_mut() = Some(owner_subscription));
     });
     re_resolve();
     set(&INITIALIZED, true);
@@ -208,11 +317,31 @@ fn apply_portal_scheme(scheme: u32) {
     re_resolve();
 }
 
+/// Apply a `ReadOne`/`Read` reply, dropping it as stale when a live signal
+/// applied after the read was issued: the reply then carries pre-signal data,
+/// and applying it would undo the newer state.
+fn apply_read_reply(issued_generation: u64, scheme: u32) {
+    if read_reply_is_stale(issued_generation) {
+        return;
+    }
+    let dark = portal_scheme_preference(scheme).unwrap_or_else(|| get(&DEFAULT_DARK));
+    set(&SYSTEM_DARK, dark);
+    re_resolve();
+}
+
+/// A live `SettingChanged` apply invalidates every in-flight read reply.
+fn bump_portal_generation() {
+    PORTAL_GENERATION.fetch_add(1, Ordering::Relaxed);
+}
+
 fn read_portal_scheme_async(conn: &gio::DBusConnection) {
     let args = ("org.freedesktop.appearance", "color-scheme").to_variant();
     let Ok(reply_ty) = glib::VariantTy::new("(v)") else {
         return;
     };
+    // Stamped on both reply paths: a signal applying meanwhile bumps the
+    // generation and the reply drops instead of overwriting fresher state.
+    let generation = portal_generation();
     let fallback_conn = conn.clone();
     conn.call(
         Some("org.freedesktop.portal.Desktop"),
@@ -231,16 +360,18 @@ fn read_portal_scheme_async(conn: &gio::DBusConnection) {
                     .as_variant()
                     .and_then(|v| v.get::<u32>())
                 {
-                    apply_portal_scheme(scheme);
+                    apply_read_reply(generation, scheme);
                 }
             }
             Err(_) => {
                 // Older portals only implement Read, whose reply nests the
-                // value variant one level deeper.
+                // value variant one level deeper. The generation is taken
+                // fresh: state may have moved during the ReadOne attempt.
                 let args = ("org.freedesktop.appearance", "color-scheme").to_variant();
                 let Ok(reply_ty) = glib::VariantTy::new("(v)") else {
                     return;
                 };
+                let generation = portal_generation();
                 fallback_conn.call(
                     Some("org.freedesktop.portal.Desktop"),
                     "/org/freedesktop/portal/desktop",
@@ -251,16 +382,27 @@ fn read_portal_scheme_async(conn: &gio::DBusConnection) {
                     gio::DBusCallFlags::NONE,
                     1000,
                     gio::Cancellable::NONE,
-                    move |res| {
-                        if let Ok(reply) = res {
+                    move |res| match res {
+                        Ok(reply) => {
                             let scheme = reply
                                 .child_value(0)
                                 .as_variant()
                                 .and_then(|v| v.as_variant())
                                 .and_then(|v| v.get::<u32>());
                             if let Some(scheme) = scheme {
-                                apply_portal_scheme(scheme);
+                                apply_read_reply(generation, scheme);
                             }
+                        }
+                        Err(read_error) => {
+                            // Both read shapes failed: the application
+                            // default stands, but silent degradation hides
+                            // real breakage (no portal, or a broken one).
+                            glib::g_warning!(
+                                "vir-gtk",
+                                "portal color-scheme read failed on both \
+                                 ReadOne and Read: {read_error}; standing on \
+                                 the application default"
+                            );
                         }
                     },
                 );
@@ -275,6 +417,7 @@ mod tests {
     use std::rc::Rc;
 
     use gtk4::glib::object::{Cast, ObjectExt};
+    use gtk4::prelude::*;
     use gtk4::{gio, glib};
 
     use super::{portal_scheme_preference, resolve_is_dark, LISTENERS};
@@ -413,5 +556,85 @@ mod tests {
                 let _ = super::system_is_dark();
             });
         });
+    }
+
+    fn setting_changed_variant(ns: &str, key: &str, scheme: u32) -> glib::Variant {
+        // The real signal body is (ssv): the scheme arrives boxed in a
+        // variant, which is why the reader goes through as_variant().
+        glib::Variant::tuple_from_iter([
+            ns.to_variant(),
+            key.to_variant(),
+            glib::Variant::from_variant(&scheme.to_variant()),
+        ])
+    }
+
+    #[test]
+    fn setting_changed_extracts_the_color_scheme_value() {
+        let body = setting_changed_variant("org.freedesktop.appearance", "color-scheme", 1);
+        assert_eq!(super::setting_changed_scheme(&body), Some(1));
+        let body = setting_changed_variant("org.freedesktop.appearance", "color-scheme", 0);
+        assert_eq!(super::setting_changed_scheme(&body), Some(0));
+    }
+
+    #[test]
+    fn setting_changed_ignores_other_keys_and_malformed_bodies() {
+        // Right shape, wrong namespace/key: not ours, no apply.
+        for (ns, key) in [
+            ("org.freedesktop.appearance", "accent-color"),
+            ("org.example", "color-scheme"),
+        ] {
+            let body = setting_changed_variant(ns, key, 1);
+            assert_eq!(
+                super::setting_changed_scheme(&body),
+                None,
+                "{ns}/{key} must not match"
+            );
+        }
+        // Malformed bodies (a hostile or broken sender): no panic, no apply.
+        // Each of these panicked via `child_value` asserts before the
+        // try_child_value hardening.
+        let empty: glib::Variant =
+            glib::Variant::tuple_from_iter(std::iter::empty::<glib::Variant>());
+        assert_eq!(super::setting_changed_scheme(&empty), None);
+        let short = glib::Variant::tuple_from_iter(["org.freedesktop.appearance".to_variant()]);
+        assert_eq!(super::setting_changed_scheme(&short), None);
+        let wrong_types = glib::Variant::tuple_from_iter([
+            1u32.to_variant(),
+            2u32.to_variant(),
+            3u32.to_variant(),
+        ]);
+        assert_eq!(super::setting_changed_scheme(&wrong_types), None);
+        let bad_scheme =
+            ("org.freedesktop.appearance", "color-scheme", "not-a-scheme").to_variant();
+        assert_eq!(super::setting_changed_scheme(&bad_scheme), None);
+    }
+
+    #[test]
+    fn name_owner_changed_triggers_reread_only_for_the_portal() {
+        let acquired = ("org.freedesktop.portal.Desktop", "", "cafe1234").to_variant();
+        assert!(super::portal_name_acquired(&acquired));
+        // Vanishing: no re-read (the next acquisition does it).
+        let lost = ("org.freedesktop.portal.Desktop", "cafe1234", "").to_variant();
+        assert!(!super::portal_name_acquired(&lost));
+        // Some other name on the bus.
+        let other = ("org.example.Other", "", "beef5678").to_variant();
+        assert!(!super::portal_name_acquired(&other));
+        // Malformed body: no panic, no re-read.
+        let empty: glib::Variant =
+            glib::Variant::tuple_from_iter(std::iter::empty::<glib::Variant>());
+        assert!(!super::portal_name_acquired(&empty));
+    }
+
+    #[test]
+    fn a_signal_apply_invalidates_in_flight_read_replies() {
+        // The stale-read race: a ReadOne reply landing after a newer
+        // SettingChanged must be dropped, not applied over it.
+        let issued = super::portal_generation();
+        assert!(!super::read_reply_is_stale(issued));
+        super::bump_portal_generation();
+        assert!(super::read_reply_is_stale(issued));
+        // A reply issued after the bump is fresh again.
+        let reissued = super::portal_generation();
+        assert!(!super::read_reply_is_stale(reissued));
     }
 }
