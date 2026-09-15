@@ -676,25 +676,13 @@ mod tests {
         // The literal % in font-size: 82% is legitimate; a %UPPERCASE_%
         // span after substitution is not (the base_css contract, re-pinned
         // through the scoping transform).
-        let has_raw_token = |css: &str| {
-            css.char_indices().any(|(i, c)| {
-                if c != '%' {
-                    return false;
-                }
-                match css[i + 1..].find('%') {
-                    Some(end) => {
-                        let inner = &css[i + 1..i + 1 + end];
-                        !inner.is_empty()
-                            && inner.chars().all(|c| c.is_ascii_uppercase() || c == '_')
-                    }
-                    None => false,
-                }
-            })
-        };
         let out = scope_css(&base_css(&Palette::dragon()), SCOPE_CLASS);
         assert!(out.contains(&format!(".{SCOPE_CLASS} button")), "{out}");
         assert!(out.contains(&format!("button.{SCOPE_CLASS}")), "{out}");
-        assert!(!has_raw_token(&out), "raw token survived scoped base_css");
+        assert!(
+            !crate::has_raw_token(&out),
+            "raw token survived scoped base_css"
+        );
     }
 
     #[test]

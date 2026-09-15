@@ -186,6 +186,11 @@ thread_local! {
 /// [`crate::portal::init`]. The call is idempotent: a second call re-splices
 /// with the current state instead of stacking another listener.
 ///
+/// Call it after a display exists (application startup, after `gtk::init` /
+/// the first window): the re-splice installs on the default display, so a
+/// call made before any display exists installs nothing until the first
+/// portal flip re-splices. The same precondition both C entry points state.
+///
 /// Note [`crate::portal::init`]'s documented side effect applies here too:
 /// the global `gtk-application-prefer-dark-theme` key tracks the resolved
 /// state.
@@ -443,25 +448,10 @@ mod tests {
     fn base_css_leaves_no_token_behind() {
         // Literal percent signs are legitimate CSS (font-size: 82%); what
         // must never survive is a %UPPERCASE_TOKEN% span.
-        let has_raw_token = |css: &str| {
-            css.char_indices().any(|(i, c)| {
-                if c != '%' {
-                    return false;
-                }
-                match css[i + 1..].find('%') {
-                    Some(end) => {
-                        let inner = &css[i + 1..i + 1 + end];
-                        !inner.is_empty()
-                            && inner.chars().all(|c| c.is_ascii_uppercase() || c == '_')
-                    }
-                    None => false,
-                }
-            })
-        };
         for palette in [Palette::dragon(), Palette::lotus()] {
             let css = super::base_css(&palette);
             assert!(
-                !has_raw_token(&css),
+                !crate::has_raw_token(&css),
                 "raw token survived base_css substitution"
             );
         }

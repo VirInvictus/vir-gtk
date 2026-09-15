@@ -48,16 +48,18 @@ fn hex_to_rgba01(hex: &str) -> Option<(f64, f64, f64, f64)> {
     }
 }
 
-/// Convert a hex color string (`#rrggbb`, or the palette's `&'static str`
-/// slots) into a [`gdk::RGBA`] for GDK-side drawing and styling.
+/// Convert a CSS hex color string (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`,
+/// case-insensitive: the same strict grammar the palette's `&'static str`
+/// slots follow) into a [`gdk::RGBA`] for GDK-side drawing and styling.
 pub fn to_gdk_rgba(hex: &str) -> Option<gdk::RGBA> {
     let (r, g, b, a) = hex_to_rgba01(hex)?;
     Some(gdk::RGBA::new(r as f32, g as f32, b as f32, a as f32))
 }
 
-/// Convert a hex color string into the 0.0-1.0 RGB triple cairo's
-/// `set_source_rgb` takes. Pair with `Context::set_source_rgba(r, g, b,
-/// alpha)` when the chart needs translucency on top of a palette slot.
+/// Convert a CSS hex color string (`#rgb`, `#rgba`, `#rrggbb`, `#rrggbbaa`,
+/// case-insensitive) into the 0.0-1.0 RGB triple cairo's `set_source_rgb`
+/// takes. Pair with `Context::set_source_rgba(r, g, b, alpha)` when the
+/// chart needs translucency on top of a palette slot.
 pub fn to_cairo_rgba(hex: &str) -> Option<(f64, f64, f64)> {
     let (r, g, b, _) = hex_to_rgba01(hex)?;
     Some((r, g, b))
