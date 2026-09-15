@@ -15,7 +15,7 @@ states what priority actually buys.**
     identical app sheets, clean render. Consumers: Viaduct takes this
     release with the fix verified live in both modes; Atrium and
     Conservatory are the routine lock bump.
-*   **Documented the ladder honestly** (final-audit MED): "app rules
+*   **Documented the ladder's real reach** (final-audit MED): "app rules
     always win" was overstated at three rustdoc sites. Priority buys
     same-specificity wins only; a base rule on a selector the app sheet
     never restates stands, which is exactly how the label gap above
@@ -43,7 +43,7 @@ audit, the capi surface, and the docs debt, in one cascade release.**
     wrapper over `connect_response` covers it app-side).
 *   **`theme::install_default()`** starts the portal and keeps the base
     sheet re-spliced on the crate tier for the process lifetime. This is
-    also the honest fix for the README's old init example, which taught
+    also the fix for the README's old init example, which taught
     a pattern that never re-spliced after startup; the manual loop now
     appears in the README as the alternative, not the default.
 *   **Library-panic hardening.** The `SettingChanged` handler reads the
@@ -271,7 +271,7 @@ against the source before landing:
     `system_is_dark()` are safe from any thread. The GTK-bound pieces
     (settings, connection, listener registry) stay in main-thread
     thread-locals: they are `!Send` by nature. This is also roadmap Phase
-    2's thread-safe-portal item in its honest shape.
+    2's thread-safe-portal item in its working shape.
 *   **Re-entrant broadcasts work.** `broadcast()` used `mem::take` on the
     listener vec, so a callback that triggered a nested state change fired
     nothing. It now iterates by index over a length sampled up front:
@@ -307,8 +307,8 @@ Suite: 9 green (5 theme + 4 portal), clippy `-D warnings` clean,
 ## v1.0.0 (2026-08-22)
 
 **Initial Extraction and Release**
-`vir-gtk` has been extracted from Atrium, Conservatory, Viaduct, and Colophon into a standalone shared library. This centralizes the VirInvictus design idiom into a single repository and permanently removes the need for individual applications to duplicate D-Bus portal listening code or hardcode hex values.
+`vir-gtk` has been extracted from Atrium, Conservatory, Viaduct, and Colophon into a standalone shared library. This centralizes the VirInvictus design idiom into a single repository and removes the need for individual applications to duplicate D-Bus portal listening code or hardcode hex values.
 
-*   **Portal Module**: Introduced the `portal` module to handle `org.freedesktop.portal.Settings` resolution. The module automatically syncs with the desktop environment's `color-scheme` broadcast, dropping dead weak references safely to prevent memory leaks in GTK's main loop.
-*   **Theme Module**: Added the `theme` module containing the authoritative Kanagawa Dragon and Lotus color palettes. It supports CSS generation and string token replacement to securely inject themes into GTK4 `CssProvider` instances.
-*   **Priority CSS**: The library strictly enforces CSS injection at `STYLE_PROVIDER_PRIORITY_USER + 1`, ensuring that `vir-gtk` styling always overrides standard desktop stylesheets while preserving the application's ability to selectively override properties.
+*   **Portal Module**: Introduced the `portal` module to handle `org.freedesktop.portal.Settings` resolution. The module syncs with the desktop environment's `color-scheme` broadcast, dropping dead weak references so dead UI objects do not linger in GTK's main loop.
+*   **Theme Module**: Added the `theme` module containing the authoritative Kanagawa Dragon and Lotus color palettes. It supports CSS generation and string token replacement to inject themes into GTK4 `CssProvider` instances.
+*   **Priority CSS**: The library installs CSS at `STYLE_PROVIDER_PRIORITY_USER + 1`, so `vir-gtk` styling overrides standard desktop stylesheets while preserving the application's ability to selectively override properties.

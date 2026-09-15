@@ -2,14 +2,17 @@
 
 A standalone Rust library that provides the shared GTK4 styling and D-Bus portal interaction layer for the VirInvictus desktop suite.
 
-`vir-gtk` exists to replace `libadwaita`. It provides the foundational visual identity for `Atrium`, `Conservatory`, and `Viaduct`, injecting a bespoke Kanagawa-themed framework directly into standard GTK4 widgets. (Colophon and Framework still style themselves; the roadmap's Phase 2 tracks the palette/registry migration and the C-ABI for Framework.) By centralizing the theme engine and D-Bus color-scheme portal listener, the applications using it maintain pixel-perfect consistency and respond instantly to system-wide dark/light mode toggles without duplicating boilerplate.
+`vir-gtk` exists to replace `libadwaita`. It provides the visual identity for `Atrium`, `Conservatory`, and `Viaduct`: a Kanagawa-themed stylesheet set installed under standard GTK4 widgets, plus the portal listener behind it. (Colophon and Framework still style themselves; the extended-palette migration waits on Colophon asking, and Framework's `capi/` adoption is pending.) The applications share one theme engine and one `org.freedesktop.portal.Settings` listener, so they render the same palette and follow system dark/light toggles without each carrying its own copy of the plumbing.
 
 ## Consumers
 
-- [Atrium](https://github.com/VirInvictus/Atrium): the GTK4 calendar/task manager (portal, base sheet, style lifecycle, widget kit).
-- [Conservatory](https://github.com/VirInvictus/Conservatory): the audiobook/podcast player (portal, base sheet, style lifecycle, widget kit).
-- [Viaduct](https://github.com/VirInvictus/Viaduct): the RSS reader (portal, base sheet, style lifecycle, widget kit).
-- Framework consumes the C API (`capi/`) from 1.0.1, retiring its manual D-Bus portal port.
+All three track this crate for the portal, the base sheet, the style lifecycle, and the widget kit:
+
+- [Atrium](https://github.com/VirInvictus/Atrium): the GTK4 calendar/task manager.
+- [Conservatory](https://github.com/VirInvictus/Conservatory): the audiobook/podcast player.
+- [Viaduct](https://github.com/VirInvictus/Viaduct): the RSS reader.
+
+Framework's adoption of the C API (`capi/`) is pending: it was planned for Framework 1.0.1, which shipped without it, and stays recorded in the roadmap's C-ABI box.
 
 ## Architecture and Capabilities
 
@@ -19,7 +22,7 @@ A standalone Rust library that provides the shared GTK4 styling and D-Bus portal
 
 The portal module is responsible for reading and monitoring the system's preferred color scheme via the `org.freedesktop.portal.Settings` D-Bus interface.
 
-It handles the complexity of composing the desktop's system color scheme against an application's internal preferences (for example, if a user sets the app to `force-dark` while the system is light). It exposes an `is_dark()` accessor and a change-listener registry that drops dead weak references safely, ensuring no memory leaks occur across the application lifecycle. Malformed portal bodies degrade instead of panicking, stale read replies cannot overwrite fresher signal state, and the module re-reads when the portal process (re)starts, so changes made while it was down are picked up.
+It handles the complexity of composing the desktop's system color scheme against an application's internal preferences (for example, if a user sets the app to `force-dark` while the system is light). It exposes an `is_dark()` accessor and a change-listener registry that holds owners weakly, so callbacks bound to widgets that die simply drop out at the next broadcast. Malformed portal bodies degrade instead of panicking, stale read replies cannot overwrite fresher signal state, and the module re-reads when the portal process (re)starts, so changes made while it was down are picked up.
 
 Note the one global side effect: on every composed change, the `gtk-application-prefer-dark-theme` key on the default `GtkSettings` tracks the resolved state.
 
@@ -55,6 +58,8 @@ Add this to your `Cargo.toml`:
 [dependencies]
 vir-gtk = { git = "https://github.com/VirInvictus/vir-gtk.git", branch = "main" }
 ```
+
+That branch pin is the suite's actual consumption model: consumers track `main` while their `Cargo.lock` pins the exact revision, so an upgrade is an explicit `cargo update -p vir-gtk` event (usually a coordinated adoption wave), never a silent drift. A consumer that prefers tags as the contract can pin a `v*` tag instead; every tag is a verbatim release record.
 
 A C application consumes the same engine through the `vir-gtk-capi` cdylib (header and pkg-config file under [`capi/`](capi/)).
 
