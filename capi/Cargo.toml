@@ -3,6 +3,7 @@ name = "vir-gtk-capi"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
 description = "C-ABI surface over vir-gtk: portal-driven dark/light theming for C GTK4 applications"
 repository = "https://github.com/VirInvictus/vir-gtk"
 

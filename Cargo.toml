@@ -5,12 +5,16 @@ members = ["capi"]
 version = "1.4.1"
 edition = "2021"
 license = "MIT"
+# Documentation value: this crate's own code runs on older stable, but the
+# gtk4 0.11 bindings require 1.92, so the build floor is theirs.
+rust-version = "1.92"
 
 [package]
 name = "vir-gtk"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
 description = "Shared GTK4 styling and D-Bus portal layer for the VirInvictus desktop suite: the libadwaita replacement"
 repository = "https://github.com/VirInvictus/vir-gtk"
 keywords = ["gtk4", "theme", "kanagawa", "portal", "dark-mode"]

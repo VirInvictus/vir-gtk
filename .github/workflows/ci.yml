@@ -3,7 +3,18 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ['v*']
   pull_request:
+
+# One run per ref at a time: a docs-only burst cancels the superseded run
+# instead of queueing container starts behind it.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Read-only token: the workflow builds and tests, it publishes nothing.
+permissions:
+  contents: read
 
 env:
   CARGO_TERM_COLOR: always
@@ -14,7 +25,10 @@ jobs:
     runs-on: ubuntu-latest
     # vir-gtk links gtk4-sys, which needs the system GTK libraries present;
     # Fedora carries a new-enough GTK and matches the suite's actual runtime
-    # (the consumer apps target GTK 4.16+).
+    # (the consumer apps target GTK 4.16+). fedora:latest floats on
+    # purpose: GTK freshness is the reason this container exists (the
+    # v4_14 pin), and a future bump that breaks CI is fixed by re-pinning
+    # then, not by tracking a stale release now.
     container: fedora:latest
     steps:
       - name: Install system dependencies
@@ -23,7 +37,6 @@ jobs:
             gcc \
             git \
             pkgconf-pkg-config \
-            glib2-devel \
             gtk4-devel \
             xorg-x11-server-Xvfb
 

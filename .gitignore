@@ -1,1 +1,16 @@
+# Cargo build output (the capi member lands in the same root target/)
 /target
+
+# Rustfmt backup files
+**/*.rs.bk
+
+# Editor / OS detritus
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Retired agent client's local settings; the machine-global ignore was
+# doing this work, which a fresh clone elsewhere would not see.
+.claude/
