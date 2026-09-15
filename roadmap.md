@@ -192,21 +192,90 @@
       clippy clean.)*
 
 ### Final audit 2026-09-13 (THE FINAL AUDIT: NEW findings, one line each; full detail in audit-final/vir-gtk/FINAL-REPORT.md)
-- [ ] MED — close_on_escape never sets a propagation phase: runs BUBBLE while rustdoc/spec/patchnotes/roadmap all claim CAPTURE, and Viaduct's adoption silently dropped the capture behavior it originally added for a recorded real failure (widgets.rs:36-54; verified against Viaduct ffcd2d6~1). Set PropagationPhase::Capture + a pinning test.
-- [ ] MED — Alert responded-latch never reset: a second present() emits nothing against the documented "exactly one response id per presentation" (widgets.rs:330, 519-544). Reset in present() (cascade-free today) or fix the three doc sites.
-- [ ] MED — CONFIRMED still open from Wave 10, never recorded fixed: scope_css splits selector lists on bare commas (style.rs:258-263, corrupts `:is(a, b)`); at_priority accepts USER+4 colliding with a live StyleScope provider (style.rs:134-136,170).
-- [ ] MED — bind_settings builds a reference cycle (scope ↔ settings ↔ closure): any bound scope leaks for process lifetime (style.rs:351-358); doc at :349-350 claims "its own lifetime". Break the cycle or reword.
+- [x] MED — close_on_escape never sets a propagation phase: runs BUBBLE while rustdoc/spec/patchnotes/roadmap all claim CAPTURE, and Viaduct's adoption silently dropped the capture behavior it originally added for a recorded real failure (widgets.rs:36-54; verified against Viaduct ffcd2d6~1). Set PropagationPhase::Capture + a pinning test. *(Executed 1.4.2: the controller sets Capture and a test inspects the installed phase.)*
+- [x] MED — Alert responded-latch never reset: a second present() emits nothing against the documented "exactly one response id per presentation" (widgets.rs:330, 519-544). Reset in present() (cascade-free today) or fix the three doc sites. *(Executed 1.4.2, the code fix: present() resets the latch; a test pins once-per-presentation and answers-again.)*
+- [x] MED — CONFIRMED still open from Wave 10, never recorded fixed: scope_css splits selector lists on bare commas (style.rs:258-263, corrupts `:is(a, b)`); at_priority accepts USER+4 colliding with a live StyleScope provider (style.rs:134-136,170). *(Executed 1.4.2: scope_css splits at parentheses depth zero (tests pin the :is case and a mixed list); at_priority warns on the vir-gtk domain at USER + 4, documented scope-owned.)*
+- [x] MED — bind_settings builds a reference cycle (scope ↔ settings ↔ closure): any bound scope leaks for process lifetime (style.rs:351-358); doc at :349-350 claims "its own lifetime". Break the cycle or reword. *(Executed 1.4.2: the scope holds the settings weakly (the cycle is broken; the changed handler still keeps the scope's teardown state alive until the target's destroy); the doc states the real shape. No direct regression test: constructing a gio::Settings needs an installed schema the test suite does not have; the fix is structural and the audit itself verified the cycle by code-reading.)*
 - [x] MED — Ladder-overpromise rustdoc survives in three sites (theme.rs:139-141, :151-153, style.rs:121-122): "app rules always win by construction" refuted by the base template's own window.csd rule; port the specificity caveat the 1.4.0 note claims is recorded. *(Executed 1.4.1, alongside the label-coverage fix below whose discovery re-proved the point live.)*
-- [ ] MED — install_default rustdoc omits the display precondition both C twins document (theme.rs:169-187 vs capi lib.rs:59, vir-gtk.h): pre-display calls silently no-op until the first portal flip.
-- [ ] MED — Add a contract test pinning capi/vir-gtk.pc's Version to CARGO_PKG_VERSION (the one deliberate second version carrier, hand-synced since 1.4.0, unpinned).
-- [ ] MED — GitHub: no branch/tag rulesets while three consumers track main by rev (force-push would orphan them; block force-push + deletion only, no required checks); README Installation documents no versioning story (add lock-rev note + tag-pin variant, or record branch=main as deliberate); CI lacks a concurrency group and fedora:latest floats.
-- [ ] MED — roadmap.md:173-179 GitHub ship-note tail garbled (stray `*`, "The README now pins the Consumers section added this release"), leaving the branch-pin proposal dispositionless; rewrite. Roadmap em-dashes survive at :11 (nine), :17, :31, :37.
-- [ ] LOW — Comment truth batch: stale "No test initializes GTK" premise (style.rs:495-497); portal.rs:80 copy-residue parenthetical, :147 "Safe from the main thread" ambiguity, :332 bump doc, :36 SETTINGS retention comment; widgets.rs:363-365/:591 garbled sentences; capi SLOTS doc wrong reason + broadcast test order dependence; color.rs public docs list one hex form where tests pin four.
-- [ ] LOW — Docs smalls: spec.md:36 stranded Priority Injection bullet (Wave-10 residual); README/CLAUDE.md state Framework capi adoption as current fact (pending); CLAUDE.md:26 "CI runs all four"; lib.rs "four things" vs five modules; "radius" exclusion-list wording could strip the square-zeroing base rules; roadmap "nine #[gtk::test]" is eight+one; spec.md:51 blanket non-activatable claim vs button_row; patchnotes unsettled-note rider (frozen record, note settlement next entry).
-- [ ] LOW — Housekeeping: .gitignore lacks editor/OS patterns; no rust-version (MSRV) field; revisit widgets/ split when kit slice 2 is scoped; portal silent wrong-typed-inner-value drop deserves a warn (degrade-loudly only covers total failure); capi NULL-callback guard; has_raw_token test helper duplication; set_choice double-apply churn.
-- [ ] LOW — Prose: README:5 benefit paragraph ("pixel-perfect", "instantly", "bespoke" + dangling modifier) and :22 "ensuring no memory leaks" guarantee contradicted by the StyleScope leak finding; v1.0.0 patchnotes adverb cluster ("securely", "automatically … safely"); "honest" self-descriptor tic; thrice-verbatim module-coverage parenthetical in README:9-11.
-- [ ] Feature candidates logged (FINAL-REPORT L4, ranked): kit slice 2 (StatusPage + Toast; carries the MED fixes as ride-alongs so consumers pay one wave); base_css switch/check/scale family (Viaduct renders system chrome today); install_default_with(palette_fn) variant; icons module (thin); high-contrast (L, Brandon-gated broadcast-API question).
+- [x] MED — install_default rustdoc omits the display precondition both C twins document (theme.rs:169-187 vs capi lib.rs:59, vir-gtk.h): pre-display calls silently no-op until the first portal flip. *(Executed 1.4.2: the rustdoc states the precondition and names the C twins.)*
+- [x] MED — Add a contract test pinning capi/vir-gtk.pc's Version to CARGO_PKG_VERSION (the one deliberate second version carrier, hand-synced since 1.4.0, unpinned). *(Executed 1.4.2, and the pin proved its worth immediately: the .pc had drifted to 1.4.0 at the 1.4.1 release; the test landed with the file corrected and it moved with the 1.4.2 bump.)*
+- [x] MED — GitHub: no branch/tag rulesets while three consumers track main by rev (force-push would orphan them; block force-push + deletion only, no required checks); README Installation documents no versioning story (add lock-rev note + tag-pin variant, or record branch=main as deliberate); CI lacks a concurrency group and fedora:latest floats. *(Executed 2026-09-15 per Brandon's gate answers: a ruleset on main (non-fast-forward + deletion blocked, bypass Brandon always, no required checks, ruleset 23470630) is ACTIVE; the tag half hit a platform wall, recorded in its own box below; the README versioning story landed (documented-keep: lock-rev consumption model + tag-pin variant named); CI gained the concurrency group and the fedora:latest float is recorded as deliberate in the workflow.)*
+- [x] MED — roadmap.md:173-179 GitHub ship-note tail garbled (stray `*`, "The README now pins the Consumers section added this release"), leaving the branch-pin proposal dispositionless; rewrite. Roadmap em-dashes survive at :11 (nine), :17, :31, :37. *(Executed 1.4.2: the tail is rewritten with the README disposition recorded; all twelve em-dashes on those four lines are recast.)*
+- [x] LOW — Comment truth batch: stale "No test initializes GTK" premise (style.rs:495-497); portal.rs:80 copy-residue parenthetical, :147 "Safe from the main thread" ambiguity, :332 bump doc, :36 SETTINGS retention comment; widgets.rs:363-365/:591 garbled sentences; capi SLOTS doc wrong reason + broadcast test order dependence; color.rs public docs list one hex form where tests pin four. *(Executed 1.4.2, every site. The broadcast-order item was fixed harder than noted: the race fired live during the blitz (the test lost its name-sort luck once in five runs), so the capi test now starts from a pristine portal state via a test-only reset instead of relying on sort order.)*
+- [x] LOW — Docs smalls: spec.md:36 stranded Priority Injection bullet (Wave-10 residual); README/CLAUDE.md state Framework capi adoption as current fact (pending); CLAUDE.md:26 "CI runs all four"; lib.rs "four things" vs five modules; "radius" exclusion-list wording could strip the square-zeroing base rules; roadmap "nine #[gtk::test]" is eight+one; spec.md:51 blanket non-activatable claim vs button_row; patchnotes unsettled-note rider (frozen record, note settlement next entry). *(Executed 1.4.2: bullet deleted, both adoption mentions read as pending, CI line names three commands, lib.rs ships five things, the exclusion list says radius divergences and names plain label text, the count is corrected, rows say non-activatable except button_row, and the 1.4.2 entry carries the settlement rider.)*
+- [x] LOW — Housekeeping: .gitignore lacks editor/OS patterns; no rust-version (MSRV) field; revisit widgets/ split when kit slice 2 is scoped; portal silent wrong-typed-inner-value drop deserves a warn (degrade-loudly only covers total failure); capi NULL-callback guard; has_raw_token test helper duplication; set_choice double-apply churn. *(Executed 1.4.2: .gitignore aligned, rust-version 1.92 declared, the portal reply-drop warns, the capi rejects NULL, and the raw-token helper is shared. set_choice double-apply is RECORDED NOT FIXED: the churn is two provider installs per bound set_choice, invisible and audit-called harmless, and the zero-risk dedup depends on gio signal synchronicity, a userspace risk with no consumer on the API yet. The widgets/ split stays gated on slice 2 being scoped, which the blitz ruling defers.)*
+- [x] LOW — Prose: README:5 benefit paragraph ("pixel-perfect", "instantly", "bespoke" + dangling modifier) and :22 "ensuring no memory leaks" guarantee contradicted by the StyleScope leak finding; v1.0.0 patchnotes adverb cluster ("securely", "automatically … safely"); "honest" self-descriptor tic; thrice-verbatim module-coverage parenthetical in README:9-11. *(Executed 1.4.2: all four; the v1.0.0 entry is safe to recast because the backfill ruling left it untagged, so no frozen record is touched.)*
+- [x] Feature candidates logged (FINAL-REPORT L4, ranked): kit slice 2 (StatusPage + Toast; carries the MED fixes as ride-alongs so consumers pay one wave); base_css switch/check/scale family (Viaduct renders system chrome today); install_default_with(palette_fn) variant; icons module (thin); high-contrast (L, Brandon-gated broadcast-API question). *(Ruled 2026-09-15 (Brandon, blitz gates): kit slice 2 DEFERRED, recorded as this repo's reopen condition in project.done, not built this blitz (the MED fixes shipped as 1.4.2 instead); the Viaduct StatusPage registrable-class-vs-shim ruling therefore stays open with it. base_css switch/check/scale and install_default_with stay slot-as-boxes ungreen-lit; icons stays a recorded candidate; high-contrast stays parked.)*
 
 - [x] MED — (found 2026-09-15 in Viaduct's force-light QA) base_css never pins plain `label` text, so a dark third-party `gtk-theme-name` supplies explicit label colors at theme priority that beat inheritance: light Kanagawa backgrounds rendered with dark-theme label text, washed to unreadable. Fix: `label { color: %FG% }` + disabled dim in the base template; proven with a `GTK_THEME=Adwaita:light` A/B. *(Executed 1.4.1; Viaduct verified live both modes.)*
 
 **CONFIRMED-prior (final-audit verification):** Priority Injection bullet, scope_css comma split, at_priority collision, ladder overpromise (partially fixed), README branch-pin residual. SUPERSEDED (verified shipped): all Wave-10 fixes the ship notes claimed (rustdoc debt, metadata, missing_docs, portal rustdoc, Palette docs, GitHub pass, CI residue, tracing dep). Audit-side corrections for the manager: the vir-gtk sheet's suite/CI/version-sync lines are stale against 1.4.0 (51 tests, xvfb back, .pc carrier); the audit full-roadmap duplicates the verification section and names a phantom "spec §1.6". Slop-reader verdict: overwhelmingly human; three localized spots to pass.
+
+
+## Consumer waves & cascade records (final blitz, 2026-09-15)
+
+- [x] **v1.4.1 wave correction:** the manager's dispatch listed Atrium as
+      not yet adopted for 1.4.1; verification found Atrium's own lane had
+      landed it hours after the snapshot (commit `94c1e2b`, lock at
+      `cc51428`, suite 1000 green, CI green, pushed 2026-09-14 21:34). So
+      the whole 1.4.1 wave was already closed: Conservatory `6245c85` +
+      `b352c16`, Viaduct lock at `cc51428` (v4.0.1, fix verified live),
+      Atrium `94c1e2b`. Nothing to redo; recorded here and in the
+      completion report as a ledger correction.
+      *(Verified 2026-09-15.)*
+- [x] **1.4.2 consumer wave (cascade closed):** release `21300ae`, tag
+      `v1.4.2` cut verbatim and pushed, crate CI `34998293718` green, the
+      GitHub Release live (plus the missing v1.4.1 Release backfilled
+      from its tag message, same shape). One adoption commit per
+      consumer, each with the lock bump, the cargo-sources regen, a
+      patchnotes line, and a green suite: Atrium `b14a500` (suite 1000,
+      CI green; the regen also fixed the 1.4.1 wave's skipped regen, so
+      the manifest moved 1.4.0 pin → 21300ae in one commit),
+      Conservatory `4741c2d` (48 binaries green, CI green, regen),
+      Viaduct `b57e67a` (suite 227 green, CI green, regen). Cross-repo
+      touches logged here and in each consumer's patchnotes per grant
+      #117; Atrium's push rides its standing stage-close grant #86 and
+      the blitz standing push grant covers the rest.
+      *(2026-09-15.)*
+- [x] **Framework capi disposition (cascade law, in writing):** Framework
+      1.0.1 shipped WITHOUT the capi adoption (verified 2026-09-15: its
+      tree has no `vir_gtk_*` references; only its roadmap mentions the
+      rider). Framework's own roadmap keeps the adoption as a
+      dependency-ordered open rider (its 1.0.1 fallback missed; it moves
+      to a future Framework release). Ruled WAIVED/PENDING, owned by
+      Framework's lane: this repo's capi surface is shipped, documented,
+      and released; no Framework-side C code is built in this lane; the
+      cascade closes here with the adoption pending on the consumer side
+      and reopens if Framework's roadmap revives the rider.
+      *(Recorded 2026-09-15.)*
+- [x] **Blitz gates (Brandon, 2026-09-15, AskUserQuestion):** (1) PUSH:
+      standing blitz grant through 2026-09-20 for this lane's pushes and
+      consumer wave commits. (2) RULESETS: lightweight, main + v* tags,
+      bypass Brandon, no required checks - main ruleset ACTIVE
+      (non-fast-forward + deletion blocked, ruleset 23470630); the v*
+      tag half is NOT POSSIBLE on this repo (see its box). (3) KIT SLICE
+      2: fixes-only 1.4.2; slice 2 is the recorded reopen condition.
+      (4) RELEASE AUTOMATION: keep manual, recorded; the verbatim rule
+      makes a tag-triggered creator either a thin wrapper or a wrong
+      substitute. (5) META: SECURITY.md only (landed); FUNDING.yml
+      declined, the README Support section already carries it.
+      *(All five asked and answered before execution.)*
+- [x] **Tag-deletion protection: not possible on this repo, recorded.**
+      GitHub push-target rulesets accept neither ref-name conditions nor
+      the deletion rule (API 422s verified against the docs), and the
+      classic protected-tags feature is Enterprise-only (endpoint 404 on
+      this free-plan org repo). The catastrophic half of the finding
+      (force-push orphaning three consumers' pinned revs) IS closed by
+      the active main ruleset; the tag-deletion half is closed as
+      platform-limited, revisit only if the org moves plans.
+      *(Recorded 2026-09-15.)*
+- [ ] **base_css switch/check/scale family + `install_default_with`
+      variant:** stay slot-as-boxes (Brandon did not green-light them in
+      the blitz gates). Natural first content for a post-blitz 1.5.0
+      alongside kit slice 2.
+- [ ] **Reopen conditions (recorded in project.done):** kit slice 2
+      (StatusPage + Toast, carrying the Viaduct registrable-class
+      ruling); high-contrast support (L-sized, broadcast-API design
+      ruling needed); Framework capi adoption (Framework's rider);
+      extended Palette/ThemeRegistry (waits on Colophon asking); icons
+      module (waits on a third consumer).
