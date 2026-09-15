@@ -1,5 +1,26 @@
 # vir-gtk Patch Notes
 
+## v1.4.1 (2026-09-15)
+
+**The base sheet owns plain label text, and the provider-ladder rustdoc
+states what priority actually buys.**
+
+*   **`label { color: %FG% }` (+ `label:disabled` dim) in the base
+    template.** The failure Viaduct's force-light QA found: a desktop
+    whose `gtk-theme-name` points at a dark third-party GTK theme writes
+    explicit label colors at theme priority, and explicit rules beat
+    inheritance everywhere the higher tiers don't restate a color, so
+    light Kanagawa backgrounds rendered with the dark theme's label text.
+    Proven by running the same binary with `GTK_THEME=Adwaita:light`:
+    identical app sheets, clean render. Consumers: Viaduct takes this
+    release with the fix verified live in both modes; Atrium and
+    Conservatory are the routine lock bump.
+*   **Documented the ladder honestly** (final-audit MED): "app rules
+    always win" was overstated at three rustdoc sites. Priority buys
+    same-specificity wins only; a base rule on a selector the app sheet
+    never restates stands, which is exactly how the label gap above
+    survived two tiers of app-owned stylesheets.
+
 ## v1.4.0 (2026-09-13)
 
 **The widget-kit first slice, the portal hardening from the six-lens

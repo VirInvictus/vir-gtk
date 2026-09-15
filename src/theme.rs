@@ -137,8 +137,10 @@ impl Palette {
 /// This tier carries the shared sheets this crate owns: [`base_css`], the
 /// palette custom-properties block, and the dark/light re-splice on theme
 /// switches. Application sheets belong on [`install_app_stylesheet`], which
-/// sits one step higher so app rules always win regardless of install order.
-/// It is the [`crate::style::StyleManager::crate_tier`] rung.
+/// sits one step higher: app rules beat base rules of equal specificity,
+/// but a base rule on a selector the app never restates still stands (the
+/// base sheet is authoritative for everything it pins). It is the
+/// [`crate::style::StyleManager::crate_tier`] rung.
 pub fn install_stylesheet(css: &str) -> Option<gtk::CssProvider> {
     crate::style::StyleManager::crate_tier().install(css)
 }
@@ -148,10 +150,12 @@ pub fn install_stylesheet(css: &str) -> Option<gtk::CssProvider> {
 ///
 /// The ladder is the override mechanism: the system `gtk.css` sits below
 /// `USER`, the crate's sheets install at `USER + 1`, and the application's
-/// own sheet installs here, so app-specific rules beat the shared base by
-/// construction instead of by install timing. Call it after (and on every
-/// theme switch alongside) [`install_stylesheet`]; each tier replaces only
-/// its own previous provider. It is the
+/// own sheet installs here, so an app rule beats a base rule of equal
+/// specificity by priority rather than by install timing. Priority is not
+/// a substitute for coverage: a base rule on a selector the app sheet
+/// never restates stands. Call it after (and on every theme switch
+/// alongside) [`install_stylesheet`]; each tier replaces only its own
+/// previous provider. It is the
 /// [`crate::style::StyleManager::app_tier`] rung.
 pub fn install_app_stylesheet(css: &str) -> Option<gtk::CssProvider> {
     crate::style::StyleManager::app_tier().install(css)
@@ -319,6 +323,14 @@ scrollbar { background-color: transparent; }
 scrollbar slider { background-color: %GRID%; border-radius: 0; min-width: 6px; min-height: 6px; }
 scrollbar slider:hover { background-color: %FG_DIM%; }
 selection { background-color: alpha(%ACCENT%, 0.35); color: %FG%; }
+/* Plain label text is pinned so a foreign base theme cannot supply its own:
+   a desktop whose gtk-theme-name points at a dark third-party theme writes
+   explicit light label colors at theme priority, and explicit rules beat
+   inheritance everywhere the higher tiers don't restate a color. Without
+   this, light Kanagawa backgrounds render with the dark theme's label text
+   (the 2026-09-15 Viaduct force-light wash, proven with GTK_THEME). */
+label { color: %FG%; }
+label:disabled { color: %FG_DIM%; }
 /* Utility classes the Adwaita stylesheet used to provide (weight / size /
    colour only; no font-family rules by design). */
 .title-1 { font-weight: 800; font-size: 170%; }

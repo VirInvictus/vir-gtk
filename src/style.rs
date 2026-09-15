@@ -118,9 +118,10 @@ impl StyleManager {
     }
 
     /// The application tier (`STYLE_PROVIDER_PRIORITY_USER + 2`): the
-    /// application's own sheet, whose rules beat the shared base by
-    /// priority. This is the rung [`crate::theme::install_app_stylesheet`]
-    /// manages.
+    /// application's own sheet. An app rule beats a base rule of equal
+    /// specificity by priority; base rules on selectors the app never
+    /// restates stand. This is the rung
+    /// [`crate::theme::install_app_stylesheet`] manages.
     pub fn app_tier() -> Self {
         Self {
             priority: gtk::STYLE_PROVIDER_PRIORITY_USER + 2,
