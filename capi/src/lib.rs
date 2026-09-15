@@ -31,8 +31,10 @@ type DarkChangedFn = extern "C" fn(glib::ffi::gboolean, glib::ffi::gpointer);
 
 thread_local! {
     /// Registration slots, main-thread only (the anchor is a GObject). The
-    /// `Option` layering lets [`vir_gtk_disconnect_dark_changed`] take a
-    /// slot out without reshuffling the vec while a dispatch is in flight.
+    /// `Option` layering is what lets [`vir_gtk_disconnect_dark_changed`]
+    /// take a slot out and run its destroy notify OUTSIDE the `RefCell`
+    /// borrow: the notify may re-enter (freeing `user_data` can disconnect
+    /// again), which would panic on a double borrow if it ran inside.
     static SLOTS: RefCell<Vec<Option<Slot>>> = const { RefCell::new(Vec::new()) };
 }
 
@@ -78,13 +80,22 @@ pub extern "C" fn vir_gtk_is_dark() -> glib::ffi::gboolean {
 /// `fw-theme`'s `notify::dark`. `destroy`, when given, runs on
 /// `user_data` exactly once at disconnection, and no callback fires after
 /// [`vir_gtk_disconnect_dark_changed`] returns. Returns the registration id
-/// to disconnect with. Call from the main thread.
+/// to disconnect with. Call from the main thread. `callback` must be
+/// non-NULL: a NULL callback warns on the `vir-gtk` log domain and yields
+/// `0`, which is never a real registration id (disconnecting it is a no-op).
 #[no_mangle]
 pub extern "C" fn vir_gtk_on_dark_changed(
-    callback: DarkChangedFn,
+    callback: Option<DarkChangedFn>,
     user_data: glib::ffi::gpointer,
     destroy: glib::ffi::GDestroyNotify,
 ) -> glib::ffi::guint {
+    // The C twins' g_return_if_fail shape: reject the call loudly and hand
+    // back an unusable id instead of registering a slot that would crash on
+    // its first dispatch.
+    let Some(callback) = callback else {
+        glib::g_warning!("vir-gtk", "vir_gtk_on_dark_changed: callback is NULL");
+        return 0;
+    };
     let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
     let anchor = glib::Object::new::<glib::Object>();
     portal::connect_dark_changed(&anchor, move |dark| dispatch(id, dark));
@@ -167,11 +178,22 @@ mod tests {
     }
 
     #[test]
+    fn a_null_callback_is_rejected_with_an_inert_id() {
+        // 0 is never a real id (NEXT_ID starts at 1): the guard yields an
+        // unusable registration instead of a slot that would crash on its
+        // first dispatch. Disconnecting it is a no-op, like any unknown id.
+        let id = vir_gtk_on_dark_changed(None, std::ptr::null_mut(), None);
+        assert_eq!(id, 0);
+        dispatch(0, true);
+        vir_gtk_disconnect_dark_changed(0);
+    }
+
+    #[test]
     fn registration_dispatches_and_disconnect_stops_it() {
         HITS.with(|hits| hits.set(0));
         DESTROYED.with(|destroyed| destroyed.set(0));
         let id = vir_gtk_on_dark_changed(
-            counting_callback,
+            Some(counting_callback),
             std::ptr::null_mut(),
             Some(counting_destroy),
         );
@@ -189,6 +211,20 @@ mod tests {
         assert_eq!(DESTROYED.with(Cell::get), 1);
         // Unknown ids never panic.
         vir_gtk_disconnect_dark_changed(999_999);
+    }
+
+    #[test]
+    fn the_pc_file_version_tracks_the_crate() {
+        // The .pc is the one deliberate second version carrier
+        // (hand-synced; pkg-config cannot read Cargo.toml) and it drifted
+        // once: 1.4.1 shipped with the .pc still reading 1.4.0. This is the
+        // pin.
+        let pc = include_str!("../vir-gtk.pc");
+        let expected = format!("Version: {}", env!("CARGO_PKG_VERSION"));
+        assert!(
+            pc.lines().any(|line| line.trim() == expected),
+            "vir-gtk.pc must carry '{expected}'"
+        );
     }
 
     #[gtk::test]
@@ -210,12 +246,19 @@ mod tests {
     #[gtk::test]
     fn registration_receives_a_real_portal_broadcast_until_disconnected() {
         gtk::init().unwrap();
+        // Portal state is process-global and the #[gtk::test] bodies share
+        // one thread: a resolve_now() only broadcasts unconditionally while
+        // the portal is uninitialized, so this test starts from a pristine
+        // state instead of relying on test-name order (it used to hold only
+        // while it sorted before the theme_install test, and lost that race
+        // once in practice).
+        portal::reset_state_for_tests();
         HITS.with(|hits| hits.set(0));
         // Registering anchors a real portal listener. resolve_now() on a
         // not-yet-initialized portal seeds the state, which broadcasts to
         // every live listener; the registered callback must see exactly one
         // flip before disconnect, and none after.
-        let id = vir_gtk_on_dark_changed(counting_callback, std::ptr::null_mut(), None);
+        let id = vir_gtk_on_dark_changed(Some(counting_callback), std::ptr::null_mut(), None);
         portal::resolve_now();
         assert_eq!(
             HITS.with(Cell::get),

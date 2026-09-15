@@ -34,9 +34,10 @@ gboolean vir_gtk_is_dark (void);
  * main loop thread. */
 typedef void (*VirGtkDarkChanged) (gboolean dark, gpointer user_data);
 
-/* Register callback to fire on every dark/light flip. destroy, when
- * given, runs on user_data exactly once at disconnection, and no
- * callback fires after vir_gtk_disconnect_dark_changed returns.
+/* Register callback to fire on every dark/light flip. callback must be
+ * non-NULL (a NULL callback warns and returns 0, never a real id).
+ * destroy, when given, runs on user_data exactly once at disconnection,
+ * and no callback fires after vir_gtk_disconnect_dark_changed returns.
  * Returns the registration id to disconnect with. */
 guint vir_gtk_on_dark_changed (VirGtkDarkChanged callback,
                                gpointer user_data,
