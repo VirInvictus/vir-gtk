@@ -1,5 +1,80 @@
 # vir-gtk Patch Notes
 
+## v1.4.2 (2026-09-15)
+
+**The final-audit contract fixes: the widget kit and the style module now
+do what their documents promise, and the hand-synced carrier is pinned.**
+
+*   **`close_on_escape` really captures.** The 1.4.0 controller never set
+    a propagation phase, so it ran in GTK's bubble phase while rustdoc,
+    spec, the patchnotes, and the roadmap all promised capture; Viaduct's
+    adoption thereby silently dropped the capture behavior its own
+    pre-adoption code existed for (a focused entry swallowing Escape).
+    The controller now sets `PropagationPhase::Capture`, pinned by a test
+    that inspects the installed phase.
+*   **`Alert` answers once per presentation, not once per lifetime.** The
+    responded latch is reset in `present()`, so a re-presented dialog
+    emits again, matching the documented contract and the reusable
+    adwaita dialogs this kit replaced. A test pins both halves: two close
+    paths within one presentation answer once, and a fresh presentation
+    answers again.
+*   **`scope_css` splits selector lists at parentheses depth zero.** The
+    bare-comma split corrupted every functional pseudo-class argument
+    (`button:is(a, b)` became two broken selectors), the last unshipped
+    Wave-10 bug. Split-at-depth-zero shipped instead of documenting the
+    constraint; the rustdoc and spec state the accepted shape, and tests
+    pin the `:is` case plus a mixed list.
+*   **`StyleManager::at_priority` warns off the scope rung.** `USER + 4`
+    is `STYLE_SCOPE_PRIORITY`, where a live `StyleScope` installs its
+    provider outside the tracked registry; constructing a managed rung
+    there now warns on the `vir-gtk` domain (the second unshipped Wave-10
+    item).
+*   **`bind_settings` no longer leaks every bound scope.** The scope held
+    its `gio::Settings` strongly while the settings' changed handler held
+    a strong scope clone: a reference cycle, process-lifetime for any
+    bound scope. The scope now holds the settings weakly (write-back
+    no-ops if the caller drops the object), and the rustdoc that claimed
+    "the scope keeps the settings connection alive for its own lifetime"
+    states the real shape.
+*   **A wrong-typed read reply degrades loudly.** A well-formed
+    `ReadOne`/`Read` reply whose inner value did not parse dropped
+    silently; both reply paths now warn on the `vir-gtk` domain before
+    standing on the current state, matching the total-failure rule.
+*   **capi hardening.** `vir_gtk_on_dark_changed` takes a nullable
+    callback at the ABI and rejects NULL with a warning and an inert id 0
+    (previously undefined behavior); the broadcast-wiring test starts
+    from a pristine portal state instead of relying on test-name order
+    (it lost that race in practice); and a contract test pins
+    `capi/vir-gtk.pc`'s `Version:` to the crate version. The pin would
+    have caught this very release cycle's predecessor: 1.4.1 shipped with
+    the .pc still reading 1.4.0, corrected here forward.
+*   **Docs surface.** `install_default` documents the display
+    precondition the C twins always stated; the lib.rs landing ships five
+    things and frames the ladder as the override mechanism, and only a
+    tie-breaker; spec drops the stranded Priority Injection bullet,
+    documents the scope split and the scope-owned rung, and corrects the
+    rows/Alert clauses; README documents the branch-tracking + lock-rev
+    consumption model (the recorded disposition for the branch=main
+    finding), states the Framework capi adoption as pending, and loses
+    its marketing adverbs; the roadmap's garbled GitHub ship-note tail is
+    rewritten; CLAUDE.md's CI line names the three commands CI runs.
+*   **CI and meta.** The workflow gains a concurrency group, a read-only
+    permissions block, the `v*` tag trigger, a verified-redundant
+    `glib2-devel` drop (gtk4-devel requires `pkgconfig(gio-2.0)`, which
+    glib2-devel provides), and the deliberate `fedora:latest` float
+    recorded with its reasoning; SECURITY.md lands with a private
+    vulnerability-reporting contact and the interesting surfaces named;
+    .gitignore aligns with the Atrium shape; `rust-version = 1.92`
+    (the gtk4 0.11 floor) is declared on the workspace.
+
+Rider on the frozen 1.4.0 record: its capi bullet calls the palette
+reconciliation "unsettled"; Brandon settled it that same evening
+(Framework keeps its own table, no canonical block generator), and the
+roadmap carries the ruling.
+
+**Cascade (consumers):** routine lock-bump wave, one adoption commit per
+consumer; Atrium, Conservatory, and Viaduct.
+
 ## v1.4.1 (2026-09-15)
 
 **The base sheet owns plain label text, and the provider-ladder rustdoc

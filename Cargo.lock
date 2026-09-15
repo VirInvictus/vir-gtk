@@ -650,14 +650,14 @@ checksum = "03c2856837ef78f57382f06b2b8563a2f512f7185d732608fd9176cb3b8edf0e"
 
 [[package]]
 name = "vir-gtk"
-version = "1.4.1"
+version = "1.4.2"
 dependencies = [
  "gtk4",
 ]
 
 [[package]]
 name = "vir-gtk-capi"
-version = "1.4.1"
+version = "1.4.2"
 dependencies = [
  "gtk4",
  "vir-gtk",
