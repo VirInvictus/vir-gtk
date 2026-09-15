@@ -1,0 +1,48 @@
+# project.done - vir-gtk
+
+**Completed:** 2026-09-15 (THE FINAL BLITZ; manager window closes 2026-09-20)
+**Range:** 6b59b05..222aad4 on main; release v1.4.2 at 21300ae
+**Verified:** suite 58 green (52 lib + 5 capi + doc-test), fmt + clippy
+`-D warnings` clean, crate CI green on the release commit, all three
+consumer suites and CIs green on their adoption commits.
+
+## What shipped
+
+- v1.4.2: the final-audit contract fixes - close_on_escape really
+  captures, Alert answers once per presentation, scope_css splits
+  selector lists at parentheses depth, at_priority warns off the
+  scope-owned USER + 4 rung, bind_settings breaks its reference cycle,
+  wrong-typed portal read replies degrade loudly, the capi rejects a
+  NULL callback, and the .pc version carrier is pinned by a contract
+  test (it had already drifted once). Docs set, CI hardening,
+  SECURITY.md, .gitignore, rust-version 1.92.
+- Consumer waves: 1.4.1 closed (Atrium's lane did it; ledger corrected)
+  and 1.4.2 closed (Atrium b14a500, Conservatory 4741c2d,
+  Viaduct b57e67a; lock bumps, cargo-sources regens, adoption notes,
+  suites and CIs green).
+- GitHub: main branch ruleset active (force-push + deletion blocked,
+  bypass Brandon, no required checks); Releases v1.4.1 and v1.4.2 live.
+- Cascade: every consumer synced in writing; Framework capi adoption
+  recorded as waived/pending on Framework's side (verified against its
+  tree; its roadmap keeps the rider).
+
+## Reopen conditions (future work, not open work)
+
+- **Kit slice 2** (Brandon deferred it in the blitz gates): StatusPage +
+  Toast consolidation, carrying the Viaduct ruling (registrable kit
+  class vs template-class shim). The natural carrier for a 1.5.0.
+- **base_css switch/check/scale family** and the
+  **install_default_with(palette_fn) variant**: slot-as-boxes, not
+  green-lit.
+- **High-contrast support**: L-sized; needs the broadcast-API design
+  ruling (a contrast flip cannot ride the current closure signature).
+- **Framework capi adoption**: pending on Framework's side
+  (dependency-ordered rider in Framework's roadmap).
+- **Extended Palette + ThemeRegistry**: waits on Colophon asking to
+  migrate (decided 2026-09-12).
+- **Icons module** (tray theme installer + search-path probe): waits on
+  a third consumer.
+- **Tag-deletion protection**: platform-impossible on the free-plan org
+  repo today; revisit if the org's GitHub plan changes.
+- **Release automation**: declined for now (deliberately manual,
+  verbatim-tag rule); revisit if release volume ever makes it painful.
