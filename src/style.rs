@@ -132,7 +132,20 @@ impl StyleManager {
     /// Conservatory's runtime accent provider installs at
     /// `STYLE_PROVIDER_PRIORITY_USER + 3`; managed this way it can also be
     /// removed or queried instead of being hand-rolled state.
+    ///
+    /// `USER + 4` is not one of those layers: it is the [`StyleScope`] rung
+    /// ([`STYLE_SCOPE_PRIORITY`]), where a live scope installs its own
+    /// provider outside this registry. A managed rung there collides with
+    /// any forced scope on the display, so constructing one warns on the
+    /// `vir-gtk` log domain; the rung remains scope-owned.
     pub fn at_priority(priority: u32) -> Self {
+        if collides_with_style_scope(priority) {
+            glib::g_warning!(
+                "vir-gtk",
+                "priority USER + 4 is the StyleScope rung; a managed rung \
+                 there collides with a live scope's provider"
+            );
+        }
         Self { priority }
     }
 
@@ -157,6 +170,13 @@ impl StyleManager {
     pub fn is_installed(&self) -> bool {
         is_installed_at(self.priority)
     }
+}
+
+/// Whether `priority` is the rung a live [`StyleScope`] claims
+/// ([`STYLE_SCOPE_PRIORITY`], `USER + 4`): the one collision [`StyleManager`]
+/// warns about, since a scope's provider lives outside the tracked registry.
+fn collides_with_style_scope(priority: u32) -> bool {
+    priority == STYLE_SCOPE_PRIORITY
 }
 
 /// The CSS class a [`StyleScope`] stamps on its target widget and scopes
@@ -235,7 +255,11 @@ impl ThemeChoice {
 /// it matches the selector inside the scope, and once with the class
 /// appended to the selector's final compound, `sel.{class}`, so a rule whose
 /// subject IS the scope root still matches (`window.csd` on a window-rooted
-/// scope). Comments and declarations pass through verbatim.
+/// scope). A selector list splits on commas that sit at parentheses depth
+/// zero, so functional pseudo-classes keep their arguments intact
+/// (`button:is(a, b)` is one selector, not two broken ones); commas inside
+/// quoted strings are beyond the flat-sheet shape this transform accepts.
+/// Comments and declarations pass through verbatim.
 ///
 /// Widgets whose CSS nodes do not descend from the target in the CSS tree
 /// (tooltips, and popovers on some shells) keep the globally-installed look;
@@ -256,8 +280,8 @@ pub fn scope_css(css: &str, class: &str) -> String {
         out.push_str(&head[..sel_start]);
         let selectors = head[sel_start..].trim();
         if !selectors.is_empty() {
-            let scoped: Vec<String> = selectors
-                .split(',')
+            let scoped: Vec<String> = split_selector_list(selectors)
+                .into_iter()
                 .map(|sel| {
                     let sel = sel.trim();
                     format!(".{class} {sel}, {sel}.{class}")
@@ -274,6 +298,30 @@ pub fn scope_css(css: &str, class: &str) -> String {
     out
 }
 
+/// Split a selector list on commas that sit at parentheses depth zero: the
+/// bare-comma split the first scoping draft used turned every functional
+/// pseudo-class argument into broken selectors (`button:is(a, b)` became
+/// `button:is(a` and `b)`). Quoted strings containing commas are beyond the
+/// flat-sheet shape the transform accepts; everything else splits here.
+fn split_selector_list(selectors: &str) -> Vec<&str> {
+    let mut depth = 0usize;
+    let mut parts = Vec::new();
+    let mut start = 0;
+    for (i, c) in selectors.char_indices() {
+        match c {
+            '(' => depth += 1,
+            ')' => depth = depth.saturating_sub(1),
+            ',' if depth == 0 => {
+                parts.push(&selectors[start..i]);
+                start = i + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(&selectors[start..]);
+    parts
+}
+
 /// The one rule the transform cannot derive from the sheets: the scope
 /// root's own canvas, matching the base sheet's `window` rule.
 fn scope_root_rule(palette: &Palette) -> String {
@@ -284,6 +332,10 @@ fn scope_root_rule(palette: &Palette) -> String {
 }
 
 type ExtraCss = Rc<dyn Fn(&Palette) -> String>;
+
+/// The optional settings binding: the settings held weakly (a strong
+/// back-edge would cycle through the changed handler) plus the key name.
+type SettingsBinding = (glib::WeakRef<gio::Settings>, String);
 
 /// A forced-palette scope over one widget subtree. While the choice is
 /// [`ThemeChoice::Dark`] or [`ThemeChoice::Light`], the target carries
@@ -306,7 +358,7 @@ pub struct StyleScope {
     choice: Rc<Cell<ThemeChoice>>,
     extra: Option<ExtraCss>,
     provider: Rc<RefCell<Option<gtk::CssProvider>>>,
-    bound: Rc<RefCell<Option<(gio::Settings, String)>>>,
+    bound: Rc<RefCell<Option<SettingsBinding>>>,
 }
 
 impl StyleScope {
@@ -335,8 +387,15 @@ impl StyleScope {
     pub fn set_choice(&self, choice: ThemeChoice) {
         let bound = self.bound.borrow().clone();
         if let Some((settings, key)) = bound {
-            if let Err(error) = settings.set_string(&key, choice.nick()) {
-                glib::g_warning!("vir-gtk", "could not write '{key}': {error}");
+            // The scope holds the settings weakly; a strong back-edge would
+            // cycle (settings -> changed handler -> scope -> bound ->
+            // settings) and leak every bound scope for process lifetime. A
+            // settings object the caller dropped leaves the scope enforcing
+            // its choice locally with nowhere to write back.
+            if let Some(settings) = settings.upgrade() {
+                if let Err(error) = settings.set_string(&key, choice.nick()) {
+                    glib::g_warning!("vir-gtk", "could not write '{key}': {error}");
+                }
             }
         }
         self.choice.set(choice);
@@ -347,10 +406,16 @@ impl StyleScope {
     /// immediately (and applied), re-read on every change, and becomes the
     /// write-back target of [`StyleScope::set_choice`]. Unknown nicks warn
     /// on the `vir-gtk` log domain and stand on [`ThemeChoice::System`].
-    /// The key should be a writable string key; the scope keeps the settings
-    /// connection alive for its own lifetime.
+    /// The key should be a writable string key. The scope holds the settings
+    /// weakly, so the binding lives exactly as long as the caller's
+    /// settings object does; the changed subscription itself is owned by
+    /// the settings and keeps the scope's state alive until the target's
+    /// destroy tears the provider down (a strong back-edge through `bound`
+    /// would be a reference cycle).
     pub fn bind_settings(&self, settings: &gio::Settings, key: &str) {
-        *self.bound.borrow_mut() = Some((settings.clone(), key.to_string()));
+        let weak = glib::WeakRef::<gio::Settings>::new();
+        weak.set(Some(settings));
+        *self.bound.borrow_mut() = Some((weak, key.to_string()));
         settings.connect_changed(Some(key), {
             let scope = self.clone();
             move |settings, key| scope.read_choice_from(settings, key)
@@ -493,9 +558,10 @@ mod tests {
 
     #[test]
     fn teardown_and_queries_are_safe_without_a_display() {
-        // No test initializes GTK, so `Display::default()` is `None` here:
-        // the whole lifecycle must degrade to no-ops rather than panic.
-        // This is also the headless path real callers hit in CI.
+        // Whether or not another test in the suite has already opened a
+        // display (the #[gtk::test] bodies in this module and in theme.rs
+        // do), the whole lifecycle must degrade to no-ops rather than
+        // panic. This is also the headless path real callers hit in CI.
         let tier = StyleManager::crate_tier();
         assert!(!tier.is_installed());
         tier.remove();
@@ -544,6 +610,22 @@ mod tests {
     }
 
     #[test]
+    fn the_scope_rung_warns_off_managed_use() {
+        // USER + 4 is STYLE_SCOPE_PRIORITY: a live scope installs its
+        // provider there outside the tracked registry, so a managed rung at
+        // the same priority would collide. at_priority warns (the one
+        // guarded priority); everything else, including the runtime layers
+        // just below, stays legal.
+        assert!(collides_with_style_scope(
+            gtk::STYLE_PROVIDER_PRIORITY_USER + 4
+        ));
+        assert!(!collides_with_style_scope(
+            gtk::STYLE_PROVIDER_PRIORITY_USER + 3
+        ));
+        assert!(!collides_with_style_scope(1234));
+    }
+
+    #[test]
     fn scope_css_prefixes_descendants_and_appends_the_root_form() {
         let out = scope_css("button { color: red; }", "sc");
         assert!(out.contains(".sc button"), "{out}");
@@ -564,6 +646,20 @@ mod tests {
             "{out}"
         );
         assert!(out.contains("button:not(:first-child).sc"), "{out}");
+    }
+
+    #[test]
+    fn scope_css_keeps_functional_pseudo_class_arguments_intact() {
+        // The Wave-10 bare-comma bug: `button:is(a, b)` split into two
+        // broken selectors. The split now only fires at parentheses depth
+        // zero, and it still splits real selector lists.
+        let out = scope_css("button:is(a, b) { color: red; }", "sc");
+        assert!(out.contains(".sc button:is(a, b)"), "{out}");
+        assert!(out.contains("button:is(a, b).sc"), "{out}");
+        assert!(!out.contains(".sc a,"), "{out}");
+        let mixed = scope_css("window:is(.a, .b), entry { background: x; }", "sc");
+        assert!(mixed.contains(".sc window:is(.a, .b)"), "{mixed}");
+        assert!(mixed.contains("entry.sc"), "{mixed}");
     }
 
     #[test]
