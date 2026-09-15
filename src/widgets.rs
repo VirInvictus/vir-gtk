@@ -36,6 +36,11 @@ use std::rc::Rc;
 pub fn close_on_escape(window: &impl IsA<gtk::Window>) {
     let win = window.clone().upcast::<gtk::Window>();
     let controller = gtk::EventControllerKey::new();
+    // Capture phase, as documented: a focused entry inside the window runs
+    // its own key controllers in the bubble phase, so capture is what makes
+    // Escape reach this controller first (the failure Viaduct's original
+    // captured the phase for: a focused entry swallowed the key).
+    controller.set_propagation_phase(gtk::PropagationPhase::Capture);
     controller.connect_key_pressed(glib::clone!(
         #[weak]
         win,
@@ -324,9 +329,11 @@ struct AlertState {
     handler: RefCell<Option<ResponseHandler>>,
     default_response: RefCell<Option<String>>,
     close_response: RefCell<String>,
-    /// Exactly-once dispatch: a button click emits its id and closes; the
-    /// window's close path (Escape, the WM close button, `close()`) emits
-    /// the close response only if nothing was emitted yet.
+    /// Exactly-once dispatch per presentation: a button click emits its id
+    /// and closes; the window's close path (Escape, the WM close button,
+    /// `close()`) emits the close response only if nothing was emitted yet.
+    /// [`Alert::present`] resets the latch, so a re-presented dialog answers
+    /// again (the adwaita dialogs this replaces are reusable).
     responded: Cell<bool>,
 }
 
@@ -349,9 +356,10 @@ impl AlertState {
 /// `present` derives the transient parent from the anchor widget's root
 /// window (the anchor may be a button inside another dialog; the transient
 /// parent must be that window, not the main one). Every close path emits
-/// exactly one response: a button press emits its id, dismissal without a
-/// button emits the close response (`"close"` unless
-/// [`Alert::set_close_response`] says otherwise, matching adwaita).
+/// exactly one response per presentation: a button press emits its id,
+/// dismissal without a button emits the close response (`"close"` unless
+/// [`Alert::set_close_response`] says otherwise, matching adwaita), and a
+/// re-presented dialog answers again.
 pub struct Alert {
     win: gtk::Window,
     extra_slot: gtk::Box,
@@ -360,9 +368,8 @@ pub struct Alert {
 }
 
 impl Alert {
-    /// Build the dialog. `heading` and `body` skip empty strings, so a
-    /// caller passing an empty title window title through keeps the line
-    /// out of the layout.
+    /// Build the dialog. `heading` and `body` skip empty strings, so
+    /// passing an empty string keeps that line out of the layout.
     pub fn new(heading: Option<&str>, body: Option<&str>) -> Self {
         let content = gtk::Box::builder()
             .orientation(gtk::Orientation::Vertical)
@@ -523,8 +530,11 @@ impl Alert {
 
     /// Show the dialog, transient for the anchor widget's root window.
     /// `None` presents without a transient parent (the rare headless or
-    /// test case).
+    /// test case). Each presentation answers exactly once: presenting
+    /// resets the response latch, so a dialog can be reused for a second
+    /// question the way the adwaita dialogs it replaces are.
     pub fn present(&self, parent: Option<&impl IsA<gtk::Widget>>) {
+        self.state.responded.set(false);
         if let Some(parent) = parent {
             let root = parent.as_ref().root().and_downcast::<gtk::Window>();
             self.win.set_transient_for(root.as_ref());
@@ -588,7 +598,7 @@ mod tests {
             Some("paste the token here")
         );
         assert!(row.child().is_some());
-        // And the all-empty form builds without a title label panic path.
+        // The all-empty form must build too: no part is required.
         let (_, empty) = entry_row(None, None, None, None);
         assert_eq!(empty.text(), "");
     }
@@ -648,6 +658,23 @@ mod tests {
     }
 
     #[gtk::test]
+    fn close_on_escape_pins_the_capture_phase() {
+        // The 1.4.0 kit shipped the controller phase-less (GTK defaults to
+        // bubble) while every doc promised capture, silently dropping the
+        // behavior Viaduct's pre-adoption code existed for. The test pins
+        // the phase so the docs stay true.
+        gtk::init().unwrap();
+        let win = gtk::Window::new();
+        close_on_escape(&win);
+        let controllers = win.observe_controllers();
+        let found = (0..controllers.n_items())
+            .filter_map(|i| controllers.item(i))
+            .filter_map(|obj| obj.downcast::<gtk::EventControllerKey>().ok())
+            .any(|c| c.propagation_phase() == gtk::PropagationPhase::Capture);
+        assert!(found, "the Escape controller must run in the capture phase");
+    }
+
+    #[gtk::test]
     fn alert_dismissal_emits_the_close_response_exactly_once() {
         gtk::init().unwrap();
         let alert = Alert::new(Some("Delete?"), Some("This cannot be undone."));
@@ -680,6 +707,28 @@ mod tests {
         alert.connect_response(move |id| sink.borrow_mut().push(id.to_string()));
         alert.window().emit_by_name::<bool>("close-request", &[]);
         assert_eq!(*seen.borrow(), vec!["cancel".to_string()]);
+    }
+
+    #[gtk::test]
+    fn alert_a_represented_dialog_answers_again() {
+        // The spec contract is "exactly one response id per presentation";
+        // the 1.4.0 latch was per Alert lifetime, dead on any re-present.
+        gtk::init().unwrap();
+        let alert = Alert::new(Some("Again?"), None);
+        let seen = Rc::new(RefCell::new(Vec::<String>::new()));
+        let sink = seen.clone();
+        alert.connect_response(move |id| sink.borrow_mut().push(id.to_string()));
+        // Within one presentation, two close paths still answer once.
+        alert.window().emit_by_name::<bool>("close-request", &[]);
+        alert.window().emit_by_name::<bool>("close-request", &[]);
+        assert_eq!(*seen.borrow(), vec!["close".to_string()]);
+        // A fresh presentation resets the latch.
+        alert.present(None::<&gtk::Widget>);
+        alert.window().emit_by_name::<bool>("close-request", &[]);
+        assert_eq!(
+            *seen.borrow(),
+            vec!["close".to_string(), "close".to_string()]
+        );
     }
 
     #[gtk::test]
