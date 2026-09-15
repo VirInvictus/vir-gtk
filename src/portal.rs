@@ -33,6 +33,9 @@ static DEFAULT_DARK: AtomicBool = AtomicBool::new(true);
 static PORTAL_GENERATION: AtomicU64 = AtomicU64::new(0);
 
 thread_local! {
+    /// The bound settings key, held for the process lifetime so every
+    /// re-resolve (a portal signal apply, or [`resolve_now`]) re-reads the
+    /// same key; init stores it once and nothing ever detaches it.
     static SETTINGS: RefCell<Option<(gio::Settings, String)>> = const { RefCell::new(None) };
     /// Held for the process lifetime so the portal signal subscription stays
     /// alive; dropping the connection would detach the `SettingChanged`
@@ -76,11 +79,11 @@ fn setting_changed_scheme(params: &glib::Variant) -> Option<u32> {
     params.try_child_value(2)?.as_variant()?.get::<u32>()
 }
 
-/// Whether a `NameOwnerChanged` body says the portal name was just acquired
-/// (`Some(scheme)`-shaped guard for the re-read): only when the acquired name
-/// is `org.freedesktop.portal.Desktop` and the new owner is non-empty. The
-/// portal appearing (at startup, or after a restart) is the cue to re-read;
-/// its disappearing needs no action, the next acquisition re-reads.
+/// Whether a `NameOwnerChanged` body says the portal name was just acquired:
+/// only when the acquired name is `org.freedesktop.portal.Desktop` and the
+/// new owner is non-empty. The portal appearing (at startup, or after a
+/// restart) is the cue to re-read; its disappearing needs no action, the
+/// next acquisition re-reads.
 fn portal_name_acquired(params: &glib::Variant) -> bool {
     let Some(name) = params.try_child_value(0).and_then(|v| v.get::<String>()) else {
         return false;
@@ -144,8 +147,8 @@ pub fn is_dark() -> bool {
 
 /// Re-run the composition immediately from the stored settings key and the
 /// current system preference, broadcasting to listeners only when the
-/// composed state changed. Safe from the main thread; call after mutating a
-/// bound settings key directly.
+/// composed state changed. Main thread only (the composition reads the
+/// thread-locals); call after mutating a bound settings key directly.
 pub fn resolve_now() {
     re_resolve();
 }
@@ -308,6 +311,26 @@ pub fn init(settings: Option<gio::Settings>, settings_key: Option<&str>, default
     set(&INITIALIZED, true);
 }
 
+/// Test-only reset of every piece of portal state: the atomics, the
+/// thread-local GTK-bound slots, and the listener registry. Test binaries
+/// share one thread across their `#[gtk::test]` bodies, so a test that
+/// needs the pre-[`init`] world (resolve_now broadcasting unconditionally,
+/// for one) cannot rely on test order to find it. Never call from
+/// application code.
+#[doc(hidden)]
+pub fn reset_state_for_tests() {
+    INITIALIZED.store(false, Ordering::Relaxed);
+    SYSTEM_DARK.store(true, Ordering::Relaxed);
+    RESOLVED_DARK.store(true, Ordering::Relaxed);
+    DEFAULT_DARK.store(true, Ordering::Relaxed);
+    PORTAL_GENERATION.store(0, Ordering::Relaxed);
+    SETTINGS.with(|s| *s.borrow_mut() = None);
+    CONNECTION.with(|c| *c.borrow_mut() = None);
+    SUBSCRIPTION.with(|s| *s.borrow_mut() = None);
+    OWNER_SUBSCRIPTION.with(|s| *s.borrow_mut() = None);
+    LISTENERS.with(|l| l.borrow_mut().clear());
+}
+
 fn apply_portal_scheme(scheme: u32) {
     // "No preference" falls back to the application default instead of
     // forcing light: the portal expressing nothing must not override the
@@ -329,7 +352,10 @@ fn apply_read_reply(issued_generation: u64, scheme: u32) {
     re_resolve();
 }
 
-/// A live `SettingChanged` apply invalidates every in-flight read reply.
+/// Any `SettingChanged` receipt invalidates every in-flight read reply,
+/// whether or not the apply moves state: the bump happens at signal
+/// receipt, before the apply, and a no-op apply invalidates too (the reply
+/// is older than the signal either way).
 fn bump_portal_generation() {
     PORTAL_GENERATION.fetch_add(1, Ordering::Relaxed);
 }
@@ -355,12 +381,18 @@ fn read_portal_scheme_async(conn: &gio::DBusConnection) {
         gio::Cancellable::NONE,
         move |res| match res {
             Ok(reply) => {
-                if let Some(scheme) = reply
-                    .child_value(0)
-                    .as_variant()
-                    .and_then(|v| v.get::<u32>())
-                {
-                    apply_read_reply(generation, scheme);
+                // The reply type is pinned to (v), so only the inner parse
+                // can fail; a well-formed reply carrying the wrong value
+                // shape degrades loudly (the same rule as a total read
+                // failure), not silently.
+                let scheme = read_reply_scheme(&reply, false);
+                match scheme {
+                    Some(scheme) => apply_read_reply(generation, scheme),
+                    None => glib::g_warning!(
+                        "vir-gtk",
+                        "portal ReadOne reply did not carry a color-scheme \
+                         value; standing on the current state"
+                    ),
                 }
             }
             Err(_) => {
@@ -384,13 +416,18 @@ fn read_portal_scheme_async(conn: &gio::DBusConnection) {
                     gio::Cancellable::NONE,
                     move |res| match res {
                         Ok(reply) => {
-                            let scheme = reply
-                                .child_value(0)
-                                .as_variant()
-                                .and_then(|v| v.as_variant())
-                                .and_then(|v| v.get::<u32>());
-                            if let Some(scheme) = scheme {
-                                apply_read_reply(generation, scheme);
+                            // The Read reply nests the value one level
+                            // deeper (`(v)` wrapping a variant); the same
+                            // loud-degrade rule applies to a malformed
+                            // inner value.
+                            match read_reply_scheme(&reply, true) {
+                                Some(scheme) => apply_read_reply(generation, scheme),
+                                None => glib::g_warning!(
+                                    "vir-gtk",
+                                    "portal Read reply did not carry a \
+                                     color-scheme value; standing on the \
+                                     current state"
+                                ),
                             }
                         }
                         Err(read_error) => {
@@ -409,6 +446,16 @@ fn read_portal_scheme_async(conn: &gio::DBusConnection) {
             }
         },
     );
+}
+
+/// Pull the color-scheme value out of a `ReadOne` (or, with `nested`, the
+/// older double-variant `Read`) reply. `None` when the inner value is
+/// missing or not a scheme number; the caller decides how loudly that
+/// degrades.
+fn read_reply_scheme(reply: &glib::Variant, nested: bool) -> Option<u32> {
+    let value = reply.try_child_value(0)?;
+    let value = if nested { value.as_variant()? } else { value };
+    value.as_variant()?.get::<u32>()
 }
 
 #[cfg(test)]
