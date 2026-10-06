@@ -1,5 +1,26 @@
 # vir-gtk Patch Notes
 
+## v1.4.3 (2026-10-06)
+
+**A presented Alert keeps answering after the caller drops the Alert
+value; Quire's discard guard died of exactly this.**
+
+*   **`Alert` responses survive a dropped `Alert`.** The close path
+    (`connect_close_request`) held the response state only weakly, so
+    the fire-and-forget shape `present()` invites (build, wire,
+    present, drop) went dead the moment the `Alert` value dropped: the
+    window stayed mapped and its buttons still closed it, but `emit`
+    upgraded a dead `Rc` and no response ever reached the handler.
+    Quire's unsaved-changes guard shipped exactly that; Brandon hit it
+    live (the Discard button closed the dialog and left the window
+    open). The close-request closure now holds `AlertState` strongly,
+    anchoring the state to the dialog window (window -> state ->
+    buttons, the buttons still hold the state only weakly, the graph
+    stays acyclic, and everything tears down when the window does).
+    The rustdoc and spec state the lifetime contract, and a regression
+    test presents a dialog, drops the `Alert`, and answers both a
+    button click and a buttonless dismissal.
+
 ## v1.4.2 (2026-09-15)
 
 **The final-audit contract fixes: the widget kit and the style module now
