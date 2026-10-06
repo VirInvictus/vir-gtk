@@ -62,4 +62,14 @@ jobs:
         # runner. (Xvfb was dropped in 1.0.3 when the suite was display-
         # free; the widget-kit slice brings it back.) Matches the Viaduct
         # convention.
+        env:
+          # The floating container's mesa bump (26.1.8 -> 26.2.2, first
+          # red run 2026-09-17 on a docs-only commit) left every test
+          # green and then aborted the test binary during GL/EGL
+          # teardown under Xvfb (SIGABRT at exit; the DRI3 and
+          # libGLESv2 warnings fingerprint it). The widget tests
+          # construct widgets but never render a frame, so the GL
+          # renderer is pure liability here: cairo keeps GL out of the
+          # process and the abort with it.
+          GSK_RENDERER: cairo
         run: xvfb-run -a cargo test --workspace
