@@ -360,6 +360,11 @@ impl AlertState {
 /// dismissal without a button emits the close response (`"close"` unless
 /// [`Alert::set_close_response`] says otherwise, matching adwaita), and a
 /// re-presented dialog answers again.
+///
+/// The response state lives as long as the dialog window: once
+/// [`Alert::present`] has shown it, dropping the `Alert` value does not
+/// silence it (the fire-and-forget shape `present` invites). Keeping the
+/// value is only needed to re-present or reconfigure.
 pub struct Alert {
     win: gtk::Window,
     extra_slot: gtk::Box,
@@ -427,13 +432,18 @@ impl Alert {
             responded: Cell::new(false),
         });
         // Any close path that skipped the buttons (Escape, the WM close
-        // button) still answers, with the close response.
-        let close_state = Rc::downgrade(&state);
+        // button) still answers, with the close response. This closure
+        // holds the state STRONGLY on purpose: it anchors AlertState to
+        // the dialog window, so a presented dialog answers its responses
+        // even after the caller drops the Alert struct (the
+        // fire-and-forget shape present() invites). The graph stays
+        // acyclic (window -> state -> buttons; the buttons hold the
+        // state only weakly), so everything tears down when the window
+        // does.
+        let close_state = Rc::clone(&state);
         win.connect_close_request(move |_| {
-            if let Some(state) = close_state.upgrade() {
-                let id = state.close_response.borrow().clone();
-                state.emit(&id);
-            }
+            let id = close_state.close_response.borrow().clone();
+            close_state.emit(&id);
             glib::Propagation::Proceed
         });
 
@@ -758,5 +768,57 @@ mod tests {
             child = widget.next_sibling();
         }
         assert_eq!(entries, 1, "set_extra_child must replace, not stack");
+    }
+
+    fn find_button(widget: &gtk::Widget, label: &str) -> Option<gtk::Button> {
+        if let Some(button) = widget.downcast_ref::<gtk::Button>() {
+            if button.label().as_deref() == Some(label) {
+                return Some(button.clone());
+            }
+        }
+        let mut child = widget.first_child();
+        while let Some(step) = child {
+            if let Some(found) = find_button(&step, label) {
+                return Some(found);
+            }
+            child = step.next_sibling();
+        }
+        None
+    }
+
+    #[gtk::test]
+    fn alert_answers_after_the_caller_drops_it() {
+        // The fire-and-forget present() shape: the caller drops the Alert
+        // value once the dialog is up. The response state must stay
+        // anchored to the dialog window, or every button is dead on
+        // click (Quire's discard guard shipped exactly that: the button
+        // closed the dialog and nothing else happened).
+        gtk::init().unwrap();
+        let seen = Rc::new(RefCell::new(Vec::<String>::new()));
+        let sink = seen.clone();
+        let alert = Alert::new(Some("Discard unsaved changes?"), None);
+        alert.connect_response(move |id| sink.borrow_mut().push(id.to_string()));
+        alert.add_response("cancel", "Cancel");
+        alert.add_response("discard", "Discard");
+        let win = alert.window().clone();
+        alert.present(None::<&gtk::Widget>);
+        drop(alert);
+
+        let button = find_button(win.upcast_ref(), "Discard")
+            .expect("the dialog must still carry its buttons");
+        button.emit_by_name::<()>("clicked", &[]);
+        assert_eq!(*seen.borrow(), vec!["discard".to_string()]);
+
+        // The close path anchors the state, so a buttonless dropped
+        // dialog answers dismissal too (its own presentation).
+        let seen = Rc::new(RefCell::new(Vec::<String>::new()));
+        let sink = seen.clone();
+        let alert = Alert::new(Some("Note"), None);
+        alert.connect_response(move |id| sink.borrow_mut().push(id.to_string()));
+        let win = alert.window().clone();
+        alert.present(None::<&gtk::Widget>);
+        drop(alert);
+        win.emit_by_name::<bool>("close-request", &[]);
+        assert_eq!(*seen.borrow(), vec!["close".to_string()]);
     }
 }
