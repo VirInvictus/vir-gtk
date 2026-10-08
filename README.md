@@ -1,5 +1,7 @@
 # vir-gtk
 
+> **Status: complete and stable.** Bug reports welcome; feature development is closed.
+
 A standalone Rust library that provides the shared GTK4 styling and D-Bus portal interaction layer for the VirInvictus desktop suite.
 
 `vir-gtk` exists to replace `libadwaita`. It provides the visual identity for `Atrium`, `Conservatory`, and `Viaduct`: a Kanagawa-themed stylesheet set installed under standard GTK4 widgets, plus the portal listener behind it. (Colophon and Framework still style themselves; the extended-palette migration waits on Colophon asking, and Framework's `capi/` adoption is pending.) The applications share one theme engine and one `org.freedesktop.portal.Settings` listener, so they render the same palette and follow system dark/light toggles without each carrying its own copy of the plumbing.
