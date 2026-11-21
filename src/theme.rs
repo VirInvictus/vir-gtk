@@ -25,7 +25,7 @@ pub struct Palette {
     pub fg_dim: &'static str,
     /// Headings and emphasized text (Kanagawa's carpYellow family).
     pub heading: &'static str,
-    /// The single action accent: checked controls, suggested actions,
+    /// The single action accent: suggested and destructive actions,
     /// focus rings, selection tints.
     pub accent: &'static str,
     /// Text drawn on top of [`Palette::accent`].
@@ -283,7 +283,11 @@ button {
   padding: 2px 10px;
 }
 button:hover { background-color: %GRID%; }
-button:active, button:checked { background-color: %ACCENT%; color: %ON_ACCENT%; border-color: %ACCENT%; }
+/* State display, not action semantics: a checked or pressed button lifts to
+   the raised tone and spends no accent; the accent belongs to the suggested
+   and destructive classes below (1.5.0, issue #1, amending the 1.1.0 paint
+   decision on the evidence of two consumer overrides). */
+button:active, button:checked { background-color: %BG_RAISED%; color: %FG%; border-color: %GRID%; }
 /* Insensitive controls must read as such: without this the flat sheet leaves
    a disabled button visually identical to a live one. */
 button:disabled { color: %FG_DIM%; border-color: alpha(%GRID%, 0.5); background-color: transparent; }
@@ -491,11 +495,37 @@ mod tests {
             "headerbar {\n  background-color: #1d1c19;",
             ".linked > button:not(:first-child) { border-left-width: 0; }",
             "list.boxed-list > row:last-child { border-bottom: none; }",
-            "button:active, button:checked { background-color: #c4746e; color: #12120f; border-color: #c4746e; }",
+            "button:active, button:checked { background-color: #282727; color: #c5c9c5; border-color: #393836; }",
             "dropdown:focus-visible,\nscale:focus-visible { outline: 1px solid #c4746e; outline-offset: -1px; }",
             ".numeric { font-feature-settings: 'tnum'; }",
         ] {
             assert!(css.contains(rule), "base_css lost a core rule: {rule}");
         }
+    }
+
+    #[test]
+    fn base_css_plain_checked_state_spends_no_accent() {
+        // 1.5.0 (issue #1): a plain checked/active button is state display,
+        // not action semantics, and the accent belongs to the suggested and
+        // destructive classes. Pins both halves so neither side can drift:
+        // the quiet lift must never carry the accent hex, and the two
+        // semantic classes must keep their paint.
+        let css = super::base_css(&Palette::dragon());
+        let quiet = css
+            .lines()
+            .find(|l| l.starts_with("button:active, button:checked {"))
+            .expect("base_css lost the checked/active rule");
+        assert!(
+            !quiet.contains("#c4746e"),
+            "the plain checked/active state spent the accent: {quiet}"
+        );
+        assert!(
+            css.contains("button.suggested-action { background-color: #c4746e;"),
+            "the suggested-action paint is part of the contract"
+        );
+        assert!(
+            css.contains("button.destructive-action { background-color: #c4746e;"),
+            "the destructive-action paint is part of the contract"
+        );
     }
 }

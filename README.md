@@ -8,11 +8,12 @@ A standalone Rust library that provides the shared GTK4 styling and D-Bus portal
 
 ## Consumers
 
-All three track this crate for the portal, the base sheet, the style lifecycle, and the widget kit:
+All four track this crate for the portal and the base sheet; the original three also take the style lifecycle and the widget kit:
 
 - [Atrium](https://github.com/VirInvictus/Atrium): the GTK4 calendar/task manager.
 - [Conservatory](https://github.com/VirInvictus/Conservatory): the audiobook/podcast player.
 - [Viaduct](https://github.com/VirInvictus/Viaduct): the RSS reader.
+- [Commonplace](https://github.com/VirInvictus/Commonplace): the Notational Velocity-line notes app (tracks the crate for the portal, the base sheet, and its app-tier sheet).
 
 Framework's adoption of the C API (`capi/`) is pending: it was planned for Framework 1.0.1, which shipped without it, and stays recorded in the roadmap's C-ABI box.
 
