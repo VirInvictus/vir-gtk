@@ -300,6 +300,25 @@
       *(Shipped 1.5.0: feat `91ca387`, release `383670e`, tag `v1.5.0`
       cut verbatim and pushed, GitHub Release live, both CI runs green
       (`44849113810` main, `44849201911` tag), issue #1 closed as
-      completed. Consumer cascade: Atrium takes an app-tier rule
-      restoring its paint-accent look; Commonplace drops its shim;
-      Conservatory and Viaduct are routine lock bumps.)*
+      completed.
+- [x] **1.5.0 consumer wave (cascade closed, six consumers):** the
+      cascade-checker dispatch corrected the first-guess dispositions
+      in two places: Viaduct DOES have checked surfaces (sidebar
+      search, "This feed" scope, Reader View toggles; the "routine
+      lock bump, no checked-button surfaces" line in the patchnotes
+      entry was wrong and the quiet lift is accepted per the sweep's
+      approved plan), and the workspace sweep found two live
+      dependents absent from every record (Docket, Quire; bump-only,
+      press-flash delta only). One adoption commit per consumer, each
+      with its local suite green and CI green: Atrium `67519e4` (the
+      app-tier paint-accent restoration, its 1.1.0 vote, suite 1006),
+      Conservatory `7b96624` (nothing visible; its LIT rules win the
+      ties; suite 693), Viaduct `8197542` (three toggles go quiet;
+      suite 310; the toggle display pass stays on Brandon's list),
+      Commonplace `f630c00` (shim dropped, patch release 0.6.1; suite
+      277), Docket `770f7ee` (patch 1.1.3, suite 140), Quire `f673dea`
+      (patch 1.5.7, suite 144). Atrium, Conservatory, and Viaduct ride
+      Unreleased per their conventions; Commonplace, Docket, and Quire
+      have no Unreleased pen, so their tags are Brandon-gated and the
+      releases stage ready. The README consumers list now names all
+      six. *(2026-11-20.)*
