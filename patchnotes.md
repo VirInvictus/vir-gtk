@@ -1,5 +1,37 @@
 # vir-gtk Patch Notes
 
+## v1.5.0 (2026-11-20)
+
+**The base sheet's checked default goes quiet: state display stops
+spending the accent (issue #1).**
+
+*   **`button:active`/`:checked` lift to the raised tone instead of
+    painting the accent.** The 1.1.0 majority decision painted every
+    checked or active button in the raw red accent, and at button scale
+    the dragon red reads pink, not "selected". Two consumers have now
+    independently fought that default in their app sheets
+    (Conservatory's LIT-not-PAINTED tab treatment; Commonplace's
+    `.cp-quiet-toggle` sheet, filed upstream as this release's ask), so
+    the recorded decision is amended: a plain checked state is display,
+    not action semantics, and the accent belongs to the suggested and
+    destructive classes, the selection tint, and the focus ring. The
+    quiet lift keeps all three button states distinct in both palettes
+    so engagement still reads, and the suggested/destructive paints are
+    untouched. Apps that want a loud checked paint own it in their app
+    sheet. Tests re-pin the new byte shape and add a semantic pin: the
+    quiet rule must never carry the accent hex, and the two semantic
+    paints must stay (both proven failing against the old template
+    before the flip). The capi's `vir_gtk_theme_install` carries the
+    same default.
+*   **Consumers (cascade):** Atrium takes an app-tier rule restoring its
+    paint-accent look (its 1.1.0 vote); Conservatory needs nothing (its
+    LIT treatment already overrides at equal specificity); Commonplace
+    drops its `.cp-quiet-toggle` shim; Viaduct is a routine lock bump
+    with no checked-button surfaces.
+
+Suite: 60 green (54 crate + 5 capi + doc-test), clippy `-D warnings`
+clean, `cargo fmt --check` clean.
+
 ## v1.4.3 (2026-10-06)
 
 **A presented Alert keeps answering after the caller drops the Alert
