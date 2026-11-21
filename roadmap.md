@@ -279,3 +279,27 @@
       ruling needed); Framework capi adoption (Framework's rider);
       extended Palette/ThemeRegistry (waits on Colophon asking); icons
       module (waits on a third consumer).
+
+## Issue sweep 2026-11-20 (issue #1: the quiet checked default)
+
+- [x] **1.5.0: the base sheet's checked/active default goes quiet
+      (issue #1).** The issue (filed 2026-11-20 by VirInvictus, from
+      Commonplace's Phase 10 sort-direction toggle) asked to stop
+      spending the accent on plain checked state; two consumers had
+      already fought the default app-side (Conservatory's LIT
+      treatment, Commonplace's cp-quiet-toggle shim). Brandon's sweep
+      decisions (AskUserQuestion, 2026-11-20): implement the quiet
+      default; quiet-lift colors (raised surface, fg text, grid border,
+      both `:active` and `:checked`); 1.5.0 MINOR framing; tags
+      pre-authorized for the sweep. The 1.1.0 paint majority is amended
+      in AGENTS.md and spec 1.2 (the roadmap's historical 1.1.0 records
+      stay frozen); the byte pin flips and a new semantic test pins
+      both halves (no accent hex on the quiet rule, suggested/destructive
+      paints stay), proven failing against the old template before the
+      flip. The README consumers list gains Commonplace.
+      *(Shipped 1.5.0: feat `91ca387`, release `383670e`, tag `v1.5.0`
+      cut verbatim and pushed, GitHub Release live, both CI runs green
+      (`44849113810` main, `44849201911` tag), issue #1 closed as
+      completed. Consumer cascade: Atrium takes an app-tier rule
+      restoring its paint-accent look; Commonplace drops its shim;
+      Conservatory and Viaduct are routine lock bumps.)*
